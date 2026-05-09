@@ -38,7 +38,8 @@ export default function ScanPage() {
             const text = result.getText();
             // Debounce duplicate scans
             const now = Date.now();
-            if (lastCodeRef.current?.code === text && now - lastCodeRef.current.at < 1500) return;
+            const last = lastCodeRef.current;
+            if (last && last.code === text && now - last.at < 1500) return;
             lastCodeRef.current = { code: text, at: now };
             handleScan(text);
           }

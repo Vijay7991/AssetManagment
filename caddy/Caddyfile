@@ -1,34 +1,56 @@
 # Caddy config for AssetHub LAN deployment.
-# Issues an internal-CA cert (browsers will warn until you trust the root cert
-# — see README for how to install it on your phone).
+# Browsers will warn about the cert the first time — that's expected for a
+# self-signed/internal-CA cert. See README for how to install Caddy's root
+# cert on a phone for friction-free HTTPS.
 
 {
-	# Use Caddy's internal CA so we get HTTPS without a public domain.
+	# Issue certs from Caddy's internal CA (no public DNS / Let's Encrypt).
 	local_certs
 	auto_https disable_redirects
 }
 
-# Catch-all: covers localhost AND any LAN IP you hit.
-:443 {
+# ─── HTTPS for localhost (this machine) ──────────────────────────────
+# An explicit hostname makes Caddy issue a cert at startup, before any
+# request comes in. Without a hostname, port-only blocks fail TLS until
+# on-demand issuance kicks in.
+localhost {
 	tls internal
+	encode gzip
 
-	# API routes — forward the full path (the API itself maps /api/*)
 	handle /api/* {
 		reverse_proxy api:8080
 	}
-
-	# Tag short links: https://host/t/ABC123 → forward to web (which loads asset detail)
 	handle /t/* {
 		reverse_proxy web:3000
 	}
-
-	# Everything else → Next.js
 	handle {
 		reverse_proxy web:3000
 	}
 }
 
-# Plain HTTP fallback (no camera access, but useful for desktop testing)
+# ─── HTTPS for LAN access (any other hostname / IP) ──────────────────
+# Issues a cert on first hit for whatever hostname the browser sends.
+# When you visit https://192.168.1.42 from your phone, Caddy generates
+# a cert for that IP on demand and caches it.
+:443 {
+	tls internal {
+		on_demand
+	}
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+	handle /t/* {
+		reverse_proxy web:3000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# ─── Plain HTTP fallback ─────────────────────────────────────────────
+# Useful for desktop testing where camera/HTTPS isn't required.
 :80 {
 	handle /api/* {
 		reverse_proxy api:8080

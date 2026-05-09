@@ -24,7 +24,7 @@ public static class CatalogEndpoints
 
         var typ = app.MapGroup("/api/asset-types").RequireAuthorization().WithTags("AssetTypes");
         typ.MapGet("/", ListTypes);
-        typ.MapGet("/{id:guid}", GetType);
+        typ.MapGet("/{id:guid}", GetAssetType);
         typ.MapPost("/", CreateType);
         typ.MapPut("/{id:guid}", UpdateType);
         typ.MapDelete("/{id:guid}", DeleteType);
@@ -101,7 +101,7 @@ public static class CatalogEndpoints
         )).ToList());
     }
 
-    static async Task<Results<Ok<AssetTypeDto>, NotFound>> GetType(
+    static async Task<Results<Ok<AssetTypeDto>, NotFound>> GetAssetType(
         Guid id, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
         var t = await db.AssetTypes.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
