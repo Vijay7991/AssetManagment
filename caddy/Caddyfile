@@ -1,0 +1,39 @@
+# Caddy config for AssetHub LAN deployment.
+# Issues an internal-CA cert (browsers will warn until you trust the root cert
+# — see README for how to install it on your phone).
+
+{
+	# Use Caddy's internal CA so we get HTTPS without a public domain.
+	local_certs
+	auto_https disable_redirects
+}
+
+# Catch-all: covers localhost AND any LAN IP you hit.
+:443 {
+	tls internal
+
+	# API routes — forward the full path (the API itself maps /api/*)
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Tag short links: https://host/t/ABC123 → forward to web (which loads asset detail)
+	handle /t/* {
+		reverse_proxy web:3000
+	}
+
+	# Everything else → Next.js
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Plain HTTP fallback (no camera access, but useful for desktop testing)
+:80 {
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

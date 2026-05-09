@@ -1,0 +1,22 @@
+# Env
+.env
+*.local
+
+# Node
+node_modules/
+.next/
+.turbo/
+
+# .NET
+bin/
+obj/
+*.user
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Data (local volumes)
+data/
+*.log
