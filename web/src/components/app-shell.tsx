@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Boxes, ScanLine, Tag as TagIcon, FolderTree,
   Users, Settings, LogOut, Sun, Moon, Menu, X, ChevronDown, Activity,
-  Wrench, Bell,
+  Wrench, Bell, MapPin,
 } from "lucide-react";
 
 const NAV = [
@@ -21,6 +21,7 @@ const NAV = [
   { label: "Scan", href: "/scan", icon: ScanLine },
   { label: "Maintenance", href: "/maintenance", icon: Wrench },
   { label: "Activity", href: "/activity", icon: Activity },
+  { label: "Locations", href: "/locations", icon: MapPin },
   { label: "Categories", href: "/categories", icon: FolderTree },
   { label: "Asset Types", href: "/asset-types", icon: TagIcon },
   { label: "Members", href: "/members", icon: Users },

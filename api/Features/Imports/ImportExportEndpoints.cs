@@ -23,6 +23,7 @@ public static class ImportExportEndpoints
     {
         var assets = await db.Assets
             .Include(a => a.AssetType).ThenInclude(t => t.Category)
+            .Include(a => a.Location)
             .Include(a => a.Tags)
             .Where(a => a.TenantId == cu.TenantId && a.DeletedAt == null)
             .OrderBy(a => a.CreatedAt)
@@ -30,7 +31,7 @@ public static class ImportExportEndpoints
             .ToListAsync(ct);
 
         var sb = new StringBuilder();
-        sb.AppendLine("name,asset_type,category,status,quantity,location,description,tag_code,purchase_price,purchased_on,warranty_until,custom_fields,created_at");
+        sb.AppendLine("name,asset_type,category,status,quantity,location,location_detail,description,tag_code,purchase_price,purchased_on,warranty_until,custom_fields,created_at");
         foreach (var a in assets)
         {
             var tag = a.Tags.FirstOrDefault(t => t.Status == AssetTagStatus.Active)?.Code ?? "";
@@ -40,7 +41,8 @@ public static class ImportExportEndpoints
               .Append(Csv(a.AssetType.Category.Name)).Append(',')
               .Append(a.Status).Append(',')
               .Append(a.Quantity).Append(',')
-              .Append(Csv(a.Location ?? "")).Append(',')
+              .Append(Csv(a.Location?.Name ?? "")).Append(',')
+              .Append(Csv(a.LocationDetail ?? "")).Append(',')
               .Append(Csv(a.Description ?? "")).Append(',')
               .Append(tag).Append(',')
               .Append(a.PurchasePrice?.ToString(CultureInfo.InvariantCulture) ?? "").Append(',')
@@ -60,7 +62,7 @@ public static class ImportExportEndpoints
         IFormFile file, ICurrentUser cu, AppDbContext db,
         IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.ImportWrite)) return TypedResults.Forbid();
         if (file is null || file.Length == 0) return TypedResults.BadRequest("CSV file is required.");
         if (file.Length > 5 * 1024 * 1024) return TypedResults.BadRequest("CSV too large (max 5MB).");
 
@@ -81,13 +83,25 @@ public static class ImportExportEndpoints
         var iPurchased = idx("purchased_on");
         var iWarranty = idx("warranty_until");
         var iCustom = idx("custom_fields");
+        var iLocDetail = idx("location_detail");
 
         if (iName < 0 || iType < 0)
             return TypedResults.BadRequest("CSV must have at least 'name' and 'asset_type' columns.");
 
-        // Cache categories and types for quick lookup
+        // Cache categories, types, and locations for quick lookup
         var cats = await db.Categories.Where(c => c.TenantId == cu.TenantId).ToListAsync(ct);
         var types = await db.AssetTypes.Where(t => t.TenantId == cu.TenantId).ToListAsync(ct);
+        var locations = await db.Locations.Where(l => l.TenantId == cu.TenantId).ToListAsync(ct);
+
+        Domain.Location FindOrCreateLocation(string name)
+        {
+            var found = locations.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (found is not null) return found;
+            var loc = new Domain.Location { TenantId = cu.TenantId!.Value, Name = name };
+            db.Locations.Add(loc);
+            locations.Add(loc);
+            return loc;
+        }
 
         AssetCategory FindOrCreateCategory(string name)
         {
@@ -141,14 +155,21 @@ public static class ImportExportEndpoints
 
                 var type = FindOrCreateType(typeName, iCategory >= 0 ? Get(iCategory) : null);
 
+                // Resolve / create location from "location" column (free-text name)
+                Domain.Location? loc = null;
+                if (iLoc >= 0 && !string.IsNullOrWhiteSpace(Get(iLoc)))
+                    loc = FindOrCreateLocation(Get(iLoc).Trim());
+
                 var asset = new Asset
                 {
                     TenantId = cu.TenantId!.Value,
                     AssetTypeId = type.Id,
                     AssetType = type,
+                    LocationId = loc?.Id,
+                    Location = loc,
+                    LocationDetail = iLocDetail >= 0 && !string.IsNullOrWhiteSpace(Get(iLocDetail)) ? Get(iLocDetail) : null,
                     Name = name,
                     Description = iDesc >= 0 && !string.IsNullOrWhiteSpace(Get(iDesc)) ? Get(iDesc) : null,
-                    Location = iLoc >= 0 && !string.IsNullOrWhiteSpace(Get(iLoc)) ? Get(iLoc) : null,
                     Quantity = iQty >= 0 && int.TryParse(Get(iQty), out var q) && q > 0 ? q : 1,
                     Status = iStatus >= 0 && Enum.TryParse<AssetStatus>(Get(iStatus), true, out var s) ? s : AssetStatus.InService,
                     PurchasePrice = iPrice >= 0 && decimal.TryParse(Get(iPrice), NumberStyles.Number, CultureInfo.InvariantCulture, out var pp) ? pp : null,

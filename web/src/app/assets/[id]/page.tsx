@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, useCan } from "@/lib/auth-context";
 import { api, AssetDetail, MaintenanceTicket, Movement } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -21,6 +21,8 @@ export default function AssetDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { accessToken } = useAuth();
+  const canWrite = useCan("assets:write");
+  const canCheckout = useCan("assets:checkout");
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -84,7 +86,7 @@ export default function AssetDetailPage() {
           <Link href="/assets"><ArrowLeft className="mr-2 h-4 w-4" /> Back to assets</Link>
         </Button>
         <div className="flex flex-wrap gap-2">
-          {a.assignedToUserId ? (
+          {canCheckout && (a.assignedToUserId ? (
             <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "CheckIn" })}>
               <UserMinus className="mr-2 h-4 w-4" /> Check in
             </Button>
@@ -92,21 +94,27 @@ export default function AssetDetailPage() {
             <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "CheckOut" })}>
               <UserCheck className="mr-2 h-4 w-4" /> Check out
             </Button>
+          ))}
+          {canCheckout && (
+            <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "Move" })}>
+              <MapPin className="mr-2 h-4 w-4" /> Move
+            </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "Move" })}>
-            <MapPin className="mr-2 h-4 w-4" /> Move
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/assets/${params.id}/edit`}>
-              <Pencil className="mr-2 h-4 w-4" /> Edit
-            </Link>
-          </Button>
+          {canWrite && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/assets/${params.id}/edit`}>
+                <Pencil className="mr-2 h-4 w-4" /> Edit
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Print label
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => setConfirmDel(true)}>
-            <Trash2 className="mr-2 h-4 w-4" /> Delete
-          </Button>
+          {canWrite && (
+            <Button variant="destructive" size="sm" onClick={() => setConfirmDel(true)}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -143,7 +151,16 @@ export default function AssetDetailPage() {
               {a.description && <p className="text-sm">{a.description}</p>}
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
                 <Field label="Quantity">{a.quantity}</Field>
-                <Field label="Location">{a.location || "—"}</Field>
+                <Field label="Location">
+                  {a.locationName ? (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="h-3 w-3" /> {a.locationName}
+                    </span>
+                  ) : "—"}
+                  {a.locationDetail && (
+                    <span className="ml-1 text-xs text-muted-foreground">· {a.locationDetail}</span>
+                  )}
+                </Field>
                 <Field label="Assigned to">{a.assignedToName || "Unassigned"}</Field>
                 <Field label="Purchase price">
                   {a.purchasePrice != null ? `$${a.purchasePrice.toFixed(2)}` : "—"}
@@ -268,7 +285,7 @@ export default function AssetDetailPage() {
           <MovementModal
             kind={movementForm.kind}
             assetId={params.id}
-            currentLocation={a.location}
+            currentLocation={a.locationDetail}
             currentAssigneeName={a.assignedToName}
             onClose={() => setMovementForm(null)}
             onDone={() => {

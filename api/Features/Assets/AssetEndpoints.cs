@@ -12,7 +12,9 @@ public record AssetListItemDto(
     string AssetType,
     string Status,
     int Quantity,
-    string? Location,
+    Guid? LocationId,
+    string? LocationName,
+    string? LocationDetail,
     string? CoverPhotoUrl,
     string? PrimaryTagCode,
     DateTimeOffset CreatedAt);
@@ -21,7 +23,9 @@ public record AssetDetailDto(
     Guid Id,
     string Name,
     string? Description,
-    string? Location,
+    Guid? LocationId,
+    string? LocationName,
+    string? LocationDetail,
     int Quantity,
     string Status,
     Guid AssetTypeId,
@@ -46,7 +50,8 @@ public record AssetCreateRequest(
     string Name,
     Guid AssetTypeId,
     string? Description,
-    string? Location,
+    Guid? LocationId,
+    string? LocationDetail,
     int Quantity,
     string? Status,
     JsonElement? FieldValues,
@@ -57,7 +62,8 @@ public record AssetCreateRequest(
 public record AssetUpdateRequest(
     string Name,
     string? Description,
-    string? Location,
+    Guid? LocationId,
+    string? LocationDetail,
     int Quantity,
     string? Status,
     JsonElement? FieldValues,
@@ -87,6 +93,7 @@ public static class AssetEndpoints
         string? q = null,
         Guid? categoryId = null,
         Guid? typeId = null,
+        Guid? locationId = null,
         string? status = null,
         int page = 1,
         int pageSize = 25)
@@ -106,6 +113,7 @@ public static class AssetEndpoints
         }
         if (typeId.HasValue) query = query.Where(a => a.AssetTypeId == typeId.Value);
         if (categoryId.HasValue) query = query.Where(a => a.AssetType.CategoryId == categoryId.Value);
+        if (locationId.HasValue) query = query.Where(a => a.LocationId == locationId.Value);
         if (Enum.TryParse<AssetStatus>(status, true, out var st)) query = query.Where(a => a.Status == st);
 
         var total = await query.CountAsync(ct);
@@ -116,7 +124,9 @@ public static class AssetEndpoints
             .Take(pageSize)
             .Select(a => new
             {
-                a.Id, a.Name, AssetType = a.AssetType.Name, a.Status, a.Quantity, a.Location, a.CreatedAt,
+                a.Id, a.Name, AssetType = a.AssetType.Name, a.Status, a.Quantity,
+                a.LocationId, LocationName = a.Location != null ? a.Location.Name : null,
+                a.LocationDetail, a.CreatedAt,
                 Cover = a.Photos.Where(p => p.IsCover).Select(p => p.Id).FirstOrDefault(),
                 FirstTag = a.Tags.Where(t => t.Status == AssetTagStatus.Active).Select(t => t.Code).FirstOrDefault(),
             })
@@ -124,7 +134,8 @@ public static class AssetEndpoints
 
         var baseUrl = $"{http.Scheme}://{http.Host}";
         var dtos = items.Select(i => new AssetListItemDto(
-            i.Id, i.Name, i.AssetType, i.Status.ToString(), i.Quantity, i.Location,
+            i.Id, i.Name, i.AssetType, i.Status.ToString(), i.Quantity,
+            i.LocationId, i.LocationName, i.LocationDetail,
             i.Cover == Guid.Empty ? null : $"{baseUrl}/api/files/photos/{i.Cover}",
             i.FirstTag,
             i.CreatedAt)).ToList();
@@ -137,6 +148,7 @@ public static class AssetEndpoints
     {
         var asset = await db.Assets
             .Include(a => a.AssetType).ThenInclude(t => t.Category)
+            .Include(a => a.Location)
             .Include(a => a.Tags)
             .Include(a => a.Photos)
             .Include(a => a.AssignedToUser)
@@ -150,7 +162,7 @@ public static class AssetEndpoints
         AssetCreateRequest req, ICurrentUser cu, AppDbContext db, HttpRequest http,
         IBarcodeRenderer _, IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
 
         var assetType = await db.AssetTypes
             .Include(t => t.Category)
@@ -159,13 +171,22 @@ public static class AssetEndpoints
 
         var status = Enum.TryParse<AssetStatus>(req.Status, true, out var s) ? s : AssetStatus.InService;
 
+        // Validate location belongs to this tenant if provided
+        if (req.LocationId.HasValue)
+        {
+            var locExists = await db.Locations.AnyAsync(l =>
+                l.Id == req.LocationId.Value && l.TenantId == cu.TenantId, ct);
+            if (!locExists) return TypedResults.BadRequest("Location not found in this tenant.");
+        }
+
         var asset = new Asset
         {
             TenantId = cu.TenantId!.Value,
             AssetTypeId = req.AssetTypeId,
+            LocationId = req.LocationId,
             Name = req.Name.Trim(),
             Description = req.Description,
-            Location = req.Location,
+            LocationDetail = req.LocationDetail,
             Quantity = req.Quantity > 0 ? req.Quantity : 1,
             Status = status,
             FieldValues = req.FieldValues is null ? null : JsonDocument.Parse(req.FieldValues.Value.GetRawText()),
@@ -193,6 +214,7 @@ public static class AssetEndpoints
         // Reload with includes
         var created = await db.Assets
             .Include(a => a.AssetType).ThenInclude(t => t.Category)
+            .Include(a => a.Location)
             .Include(a => a.Tags)
             .Include(a => a.Photos)
             .Include(a => a.AssignedToUser)
@@ -201,22 +223,31 @@ public static class AssetEndpoints
         return TypedResults.Ok(MapDetail(created, http));
     }
 
-    static async Task<Results<Ok<AssetDetailDto>, NotFound, ForbidHttpResult>> Update(
+    static async Task<Results<Ok<AssetDetailDto>, NotFound, ForbidHttpResult, BadRequest<string>>> Update(
         Guid id, AssetUpdateRequest req, ICurrentUser cu, AppDbContext db, HttpRequest http,
         IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         var asset = await db.Assets
             .Include(a => a.AssetType).ThenInclude(t => t.Category)
+            .Include(a => a.Location)
             .Include(a => a.Tags)
             .Include(a => a.Photos)
             .Include(a => a.AssignedToUser)
             .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
         if (asset is null) return TypedResults.NotFound();
 
+        if (req.LocationId.HasValue)
+        {
+            var locExists = await db.Locations.AnyAsync(l =>
+                l.Id == req.LocationId.Value && l.TenantId == cu.TenantId, ct);
+            if (!locExists) return TypedResults.BadRequest("Location not found in this tenant.");
+        }
+
         asset.Name = req.Name.Trim();
         asset.Description = req.Description;
-        asset.Location = req.Location;
+        asset.LocationId = req.LocationId;
+        asset.LocationDetail = req.LocationDetail;
         asset.Quantity = req.Quantity > 0 ? req.Quantity : 1;
         if (Enum.TryParse<AssetStatus>(req.Status, true, out var s)) asset.Status = s;
         if (req.FieldValues is not null)
@@ -227,6 +258,11 @@ public static class AssetEndpoints
         asset.AssignedToUserId = req.AssignedToUserId;
         asset.UpdatedAt = DateTimeOffset.UtcNow;
 
+        // Reload location nav after change so the response carries the new name
+        if (asset.LocationId.HasValue && asset.Location?.Id != asset.LocationId)
+            asset.Location = await db.Locations.FindAsync(new object?[] { asset.LocationId.Value }, ct);
+        else if (asset.LocationId is null) asset.Location = null;
+
         audit.Log("Updated", "Asset", asset.Id, $"Updated asset '{asset.Name}'", new { asset.Status });
         await db.SaveChangesAsync(ct);
         return TypedResults.Ok(MapDetail(asset, http));
@@ -235,7 +271,7 @@ public static class AssetEndpoints
     static async Task<Results<NoContent, NotFound, ForbidHttpResult>> Delete(
         Guid id, ICurrentUser cu, AppDbContext db, IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == id && a.TenantId == cu.TenantId, ct);
         if (asset is null) return TypedResults.NotFound();
         asset.DeletedAt = DateTimeOffset.UtcNow;
@@ -280,7 +316,9 @@ public static class AssetEndpoints
     {
         var baseUrl = $"{http.Scheme}://{http.Host}";
         return new AssetDetailDto(
-            a.Id, a.Name, a.Description, a.Location, a.Quantity, a.Status.ToString(),
+            a.Id, a.Name, a.Description,
+            a.LocationId, a.Location?.Name, a.LocationDetail,
+            a.Quantity, a.Status.ToString(),
             a.AssetTypeId, a.AssetType.Name, a.AssetType.CategoryId, a.AssetType.Category.Name,
             a.FieldValues?.RootElement,
             a.PurchasePrice, a.PurchasedOn, a.WarrantyUntil,

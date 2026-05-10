@@ -47,6 +47,7 @@ public static class TagEndpoints
     {
         var tag = await db.AssetTags
             .Include(t => t.Asset).ThenInclude(a => a.AssetType).ThenInclude(t => t.Category)
+            .Include(t => t.Asset).ThenInclude(a => a.Location)
             .Include(t => t.Asset).ThenInclude(a => a.Tags)
             .Include(t => t.Asset).ThenInclude(a => a.Photos)
             .Include(t => t.Asset).ThenInclude(a => a.AssignedToUser)
@@ -63,7 +64,7 @@ public static class TagEndpoints
     static async Task<Results<Ok<TagDto>, NotFound, ForbidHttpResult>> CreateForAsset(
         Guid assetId, ICurrentUser cu, AppDbContext db, HttpRequest http, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         var asset = await db.Assets.FirstOrDefaultAsync(a =>
             a.Id == assetId && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
         if (asset is null) return TypedResults.NotFound();
@@ -94,7 +95,7 @@ public static class TagEndpoints
     static async Task<Results<NoContent, NotFound, ForbidHttpResult>> Retire(
         Guid id, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         var tag = await db.AssetTags.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == cu.TenantId, ct);
         if (tag is null) return TypedResults.NotFound();
         tag.Status = AssetTagStatus.Retired;
@@ -133,7 +134,9 @@ public static class TagEndpoints
     {
         var baseUrl = $"{http.Scheme}://{http.Host}";
         return new AssetDetailDto(
-            a.Id, a.Name, a.Description, a.Location, a.Quantity, a.Status.ToString(),
+            a.Id, a.Name, a.Description,
+            a.LocationId, a.Location?.Name, a.LocationDetail,
+            a.Quantity, a.Status.ToString(),
             a.AssetTypeId, a.AssetType.Name, a.AssetType.CategoryId, a.AssetType.Category.Name,
             a.FieldValues?.RootElement,
             a.PurchasePrice, a.PurchasedOn, a.WarrantyUntil,

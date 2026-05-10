@@ -62,7 +62,7 @@ public static class MovementEndpoints
         Guid assetId, CheckOutRequest req, ICurrentUser cu, AppDbContext db,
         IAuditLogger audit, INotifier notifier, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager", "Member")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsCheckout)) return TypedResults.Forbid();
         var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
         if (asset is null) return TypedResults.NotFound();
         if (asset.AssignedToUserId.HasValue)
@@ -73,9 +73,9 @@ public static class MovementEndpoints
         if (!await db.Memberships.AnyAsync(m => m.TenantId == cu.TenantId && m.UserId == toUserId, ct))
             return TypedResults.BadRequest("Recipient is not a member of this workspace.");
 
-        var fromLoc = asset.Location;
+        var fromLoc = asset.LocationDetail;
         asset.AssignedToUserId = toUserId;
-        if (!string.IsNullOrWhiteSpace(req.ToLocation)) asset.Location = req.ToLocation;
+        if (!string.IsNullOrWhiteSpace(req.ToLocation)) asset.LocationDetail = req.ToLocation;
         asset.UpdatedAt = DateTimeOffset.UtcNow;
 
         db.AssetMovements.Add(new AssetMovement
@@ -84,18 +84,18 @@ public static class MovementEndpoints
             AssetId = assetId,
             Kind = "CheckOut",
             FromLocation = fromLoc,
-            ToLocation = asset.Location,
+            ToLocation = asset.LocationDetail,
             ToUserId = toUserId,
             Notes = req.Notes,
             PerformedBy = cu.UserId!.Value,
         });
-        audit.Log("CheckedOut", "Asset", assetId, $"Checked out '{asset.Name}'", new { toUserId, asset.Location });
+        audit.Log("CheckedOut", "Asset", assetId, $"Checked out '{asset.Name}'", new { toUserId, asset.LocationDetail });
 
         if (toUserId != cu.UserId)
         {
             notifier.Notify(toUserId, "AssetAssigned",
                 $"Asset checked out to you: {asset.Name}",
-                $"Location: {asset.Location ?? "—"}",
+                $"Location: {asset.LocationDetail ?? "—"}",
                 $"/assets/{assetId}");
         }
 
@@ -107,16 +107,16 @@ public static class MovementEndpoints
         Guid assetId, CheckInRequest req, ICurrentUser cu, AppDbContext db,
         IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager", "Member")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsCheckout)) return TypedResults.Forbid();
         var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
         if (asset is null) return TypedResults.NotFound();
         if (!asset.AssignedToUserId.HasValue)
             return TypedResults.BadRequest("Asset is not currently checked out.");
 
         var fromUserId = asset.AssignedToUserId;
-        var fromLoc = asset.Location;
+        var fromLoc = asset.LocationDetail;
         asset.AssignedToUserId = null;
-        if (!string.IsNullOrWhiteSpace(req.ToLocation)) asset.Location = req.ToLocation;
+        if (!string.IsNullOrWhiteSpace(req.ToLocation)) asset.LocationDetail = req.ToLocation;
         asset.UpdatedAt = DateTimeOffset.UtcNow;
 
         db.AssetMovements.Add(new AssetMovement
@@ -126,7 +126,7 @@ public static class MovementEndpoints
             Kind = "CheckIn",
             FromUserId = fromUserId,
             FromLocation = fromLoc,
-            ToLocation = asset.Location,
+            ToLocation = asset.LocationDetail,
             Notes = req.Notes,
             PerformedBy = cu.UserId!.Value,
         });
@@ -140,13 +140,13 @@ public static class MovementEndpoints
         Guid assetId, MoveRequest req, ICurrentUser cu, AppDbContext db,
         IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager", "Member")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsCheckout)) return TypedResults.Forbid();
         if (string.IsNullOrWhiteSpace(req.ToLocation)) return TypedResults.BadRequest("Destination location is required.");
         var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
         if (asset is null) return TypedResults.NotFound();
 
-        var from = asset.Location;
-        asset.Location = req.ToLocation;
+        var from = asset.LocationDetail;
+        asset.LocationDetail = req.ToLocation;
         asset.UpdatedAt = DateTimeOffset.UtcNow;
 
         db.AssetMovements.Add(new AssetMovement

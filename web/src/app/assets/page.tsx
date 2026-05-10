@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth-context";
-import { api, AssetListItem, ImportResult, Paged } from "@/lib/api";
+import { useAuth, useCan } from "@/lib/auth-context";
+import { api, AssetListItem, ImportResult, Location, Paged } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Card, CardContent } from "@/components/ui/card";
-import { Boxes, Download, Plus, Search, Upload } from "lucide-react";
+import { Card, CardContent, Badge } from "@/components/ui/card";
+import { Boxes, Download, MapPin, Plus, Search, Upload } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { StatusBadge, prettyStatus } from "@/components/status";
 
@@ -17,10 +17,19 @@ const STATUSES = ["InService", "InStorage", "InRepair", "Retired", "Lost"];
 
 export default function AssetsPage() {
   const { accessToken } = useAuth();
+  const canWrite = useCan("assets:write");
+  const canImport = useCan("import:write");
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [page, setPage] = useState(1);
+
+  const locations = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get<Location[]>("/locations", accessToken),
+    enabled: !!accessToken,
+  });
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const pageSize = 25;
@@ -49,11 +58,12 @@ export default function AssetsPage() {
   }
 
   const list = useQuery({
-    queryKey: ["assets", q, status, page],
+    queryKey: ["assets", q, status, locationId, page],
     queryFn: () => {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (q) params.set("q", q);
       if (status) params.set("status", status);
+      if (locationId) params.set("locationId", locationId);
       return api.get<Paged<AssetListItem>>(`/assets?${params}`, accessToken);
     },
     enabled: !!accessToken,
@@ -71,17 +81,23 @@ export default function AssetsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <input ref={importInput} type="file" accept=".csv,text/csv" className="hidden"
-                 onChange={e => e.target.files?.[0] && importMut.mutate(e.target.files[0])} />
-          <Button variant="outline" size="sm" onClick={() => importInput.current?.click()} disabled={importMut.isPending}>
-            <Upload className="mr-2 h-4 w-4" /> {importMut.isPending ? "Importing…" : "Import CSV"}
-          </Button>
+          {canImport && (
+            <>
+              <input ref={importInput} type="file" accept=".csv,text/csv" className="hidden"
+                     onChange={e => e.target.files?.[0] && importMut.mutate(e.target.files[0])} />
+              <Button variant="outline" size="sm" onClick={() => importInput.current?.click()} disabled={importMut.isPending}>
+                <Upload className="mr-2 h-4 w-4" /> {importMut.isPending ? "Importing…" : "Import CSV"}
+              </Button>
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={downloadExport}>
             <Download className="mr-2 h-4 w-4" /> Export CSV
           </Button>
-          <Button asChild>
-            <Link href="/assets/new"><Plus className="mr-2 h-4 w-4" /> New asset</Link>
-          </Button>
+          {canWrite && (
+            <Button asChild>
+              <Link href="/assets/new"><Plus className="mr-2 h-4 w-4" /> New asset</Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -102,6 +118,39 @@ export default function AssetsPage() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Locations quick-filter strip */}
+      {locations.data && locations.data.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => { setLocationId(""); setPage(1); }}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              locationId === ""
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background hover:bg-accent"
+            }`}>
+            <MapPin className="h-3 w-3" /> All locations
+            <span className="text-muted-foreground">
+              ({locations.data.reduce((s, l) => s + l.assetCount, 0)})
+            </span>
+          </button>
+          {locations.data.map(l => (
+            <button
+              key={l.id}
+              onClick={() => { setLocationId(l.id); setPage(1); }}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                locationId === l.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background hover:bg-accent"
+              }`}>
+              <MapPin className="h-3 w-3" />
+              {l.name}
+              {l.city && <span className="opacity-70">· {l.city}</span>}
+              <span className={locationId === l.id ? "" : "text-muted-foreground"}>({l.assetCount})</span>
+            </button>
+          ))}
+        </div>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -169,7 +218,15 @@ export default function AssetsPage() {
                       <td className="px-4 py-3 text-muted-foreground">{a.assetType}</td>
                       <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
                       <td className="px-4 py-3 text-muted-foreground">{a.quantity}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{a.location || "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {a.locationName ? (
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {a.locationName}
+                            {a.locationDetail && <span className="text-xs opacity-70">· {a.locationDetail}</span>}
+                          </span>
+                        ) : (a.locationDetail || "—")}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs">{a.primaryTagCode || "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{relativeTime(a.createdAt)}</td>
                     </tr>

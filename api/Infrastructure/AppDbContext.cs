@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<MaintenanceTicket> MaintenanceTickets => Set<MaintenanceTicket>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Location> Locations => Set<Location>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -83,12 +84,23 @@ public class AppDbContext : DbContext
             e.HasIndex(a => new { a.TenantId, a.Name });
             e.HasIndex(a => new { a.TenantId, a.AssetTypeId });
             e.HasIndex(a => new { a.TenantId, a.Status });
+            e.HasIndex(a => new { a.TenantId, a.LocationId });
             e.HasIndex(a => a.DeletedAt);
             e.HasOne(a => a.AssetType).WithMany(t => t.Assets)
                 .HasForeignKey(a => a.AssetTypeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(a => a.Location).WithMany()
+                .HasForeignKey(a => a.LocationId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(a => a.AssignedToUser).WithMany()
                 .HasForeignKey(a => a.AssignedToUserId).OnDelete(DeleteBehavior.SetNull);
             e.Property(a => a.PurchasePrice).HasPrecision(18, 2);
+        });
+
+        // ── Location ──────────────────────────────────────────────
+        b.Entity<Location>(e =>
+        {
+            e.HasIndex(l => new { l.TenantId, l.Name });
+            e.HasIndex(l => new { l.TenantId, l.City });
+            e.HasIndex(l => l.IsActive);
         });
 
         // ── AssetTag ──────────────────────────────────────────────

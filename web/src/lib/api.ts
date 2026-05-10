@@ -70,6 +70,29 @@ export type TenantDto = {
   slug: string;
   role: "Admin" | "Manager" | "Member";
   plan: string;
+  isOwner: boolean;
+  permissions: string[];
+};
+
+export const PERMISSIONS = [
+  { key: "assets:write", label: "Create / edit / delete assets" },
+  { key: "assets:checkout", label: "Check out, check in, move assets" },
+  { key: "catalog:write", label: "Manage categories, asset types, locations" },
+  { key: "maintenance:write", label: "Create and manage maintenance tickets" },
+  { key: "import:write", label: "Bulk-import assets via CSV" },
+  { key: "members:write", label: "Invite and manage workspace members" },
+] as const;
+
+export type Location = {
+  id: string;
+  name: string;
+  code: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  address: string | null;
+  isActive: boolean;
+  assetCount: number;
 };
 
 export type AuthResponse = {
@@ -111,7 +134,9 @@ export type AssetListItem = {
   assetType: string;
   status: string;
   quantity: number;
-  location: string | null;
+  locationId: string | null;
+  locationName: string | null;
+  locationDetail: string | null;
   coverPhotoUrl: string | null;
   primaryTagCode: string | null;
   createdAt: string;
@@ -137,7 +162,9 @@ export type AssetDetail = {
   id: string;
   name: string;
   description: string | null;
-  location: string | null;
+  locationId: string | null;
+  locationName: string | null;
+  locationDetail: string | null;
   quantity: number;
   status: string;
   assetTypeId: string;

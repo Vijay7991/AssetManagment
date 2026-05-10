@@ -56,7 +56,7 @@ public static class FileEndpoints
         Guid assetId, IFormFile file, ICurrentUser cu, AppDbContext db,
         StorageOptions storage, HttpRequest http, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         if (file is null || file.Length == 0) return TypedResults.BadRequest("No file uploaded.");
         if (file.Length > 10 * 1024 * 1024) return TypedResults.BadRequest("File too large (max 10MB).");
         if (!AllowedImageTypes.Contains(file.ContentType))
@@ -115,7 +115,7 @@ public static class FileEndpoints
         Guid assetId, Guid photoId, ICurrentUser cu, AppDbContext db,
         StorageOptions storage, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         var photo = await db.AssetPhotos.FirstOrDefaultAsync(p =>
             p.Id == photoId && p.AssetId == assetId && p.TenantId == cu.TenantId, ct);
         if (photo is null) return TypedResults.NotFound();
@@ -134,7 +134,7 @@ public static class FileEndpoints
     static async Task<Results<NoContent, NotFound, ForbidHttpResult>> SetCover(
         Guid assetId, Guid photoId, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         var photos = await db.AssetPhotos
             .Where(p => p.AssetId == assetId && p.TenantId == cu.TenantId)
             .ToListAsync(ct);

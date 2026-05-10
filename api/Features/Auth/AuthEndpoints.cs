@@ -59,6 +59,7 @@ public static class AuthEndpoints
             TenantId = tenant.Id,
             UserId = user.Id,
             Role = "Admin",
+            IsOwner = true,   // First admin = workspace owner, immutable
         };
         db.Memberships.Add(membership);
 
@@ -183,7 +184,8 @@ public static class AuthEndpoints
         CancellationToken ct, bool includeNewRefresh = true)
     {
         var membership = user.Memberships.First(m => m.TenantId == activeTenantId);
-        var (access, exp) = jwt.IssueAccessToken(user, activeTenantId, membership.Role);
+        var permissions = Perms.Effective(membership);
+        var (access, exp) = jwt.IssueAccessToken(user, activeTenantId, membership.Role, permissions, membership.IsOwner);
 
         string refreshTokenPlain = "";
         if (includeNewRefresh)
@@ -200,7 +202,8 @@ public static class AuthEndpoints
         }
 
         var tenants = user.Memberships.Select(m => new TenantDto(
-            m.TenantId, m.Tenant.Name, m.Tenant.Slug, m.Role, m.Tenant.Plan.ToString())).ToList();
+            m.TenantId, m.Tenant.Name, m.Tenant.Slug, m.Role, m.Tenant.Plan.ToString(),
+            m.IsOwner, Perms.Effective(m))).ToList();
         var active = tenants.First(t => t.Id == activeTenantId);
 
         return new AuthResponse(

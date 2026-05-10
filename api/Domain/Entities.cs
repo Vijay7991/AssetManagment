@@ -44,6 +44,16 @@ public class TenantMembership
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
     [MaxLength(40)] public string Role { get; set; } = "Member";  // Admin, Manager, Member
+
+    /// True for the user who created the tenant. Owners cannot be removed and
+    /// cannot be demoted from Admin. Exactly one per tenant.
+    public bool IsOwner { get; set; }
+
+    /// Extra permissions granted on top of the role's defaults. JSONB array of
+    /// permission strings like "assets:write", "catalog:write", etc.
+    [Column(TypeName = "jsonb")]
+    public JsonDocument? ExtraPermissions { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -121,9 +131,15 @@ public class Asset
     public Guid AssetTypeId { get; set; }
     public AssetType AssetType { get; set; } = null!;
 
+    /// Optional FK to a managed Location entity (e.g. "Mumbai Warehouse").
+    public Guid? LocationId { get; set; }
+    public Location? Location { get; set; }
+
     [MaxLength(200)] public string Name { get; set; } = "";
     [MaxLength(2000)] public string? Description { get; set; }
-    [MaxLength(120)] public string? Location { get; set; }
+    /// Free-form spot within the location, e.g. "Aisle 3 — Shelf B".
+    /// Use this for fine-grained position; LocationId for the parent place.
+    [MaxLength(120)] public string? LocationDetail { get; set; }
     public int Quantity { get; set; } = 1;
     public AssetStatus Status { get; set; } = AssetStatus.InService;
 
@@ -202,6 +218,22 @@ public class AssetMovement
     [MaxLength(500)] public string? Notes { get; set; }
     public Guid PerformedBy { get; set; }
     public DateTimeOffset PerformedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+// ─── Locations ───────────────────────────────────────────────────────
+
+public class Location
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    [MaxLength(120)] public string Name { get; set; } = "";       // "Mumbai Warehouse"
+    [MaxLength(60)]  public string? City { get; set; }
+    [MaxLength(60)]  public string? Region { get; set; }          // state / province
+    [MaxLength(60)]  public string? Country { get; set; }
+    [MaxLength(300)] public string? Address { get; set; }
+    [MaxLength(20)]  public string? Code { get; set; }            // optional short code, e.g. "MUM-01"
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 // ─── Audit ───────────────────────────────────────────────────────────

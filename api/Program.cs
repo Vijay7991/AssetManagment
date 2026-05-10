@@ -5,6 +5,7 @@ using AssetHub.Api.Features.Auth;
 using AssetHub.Api.Features.Catalog;
 using AssetHub.Api.Features.Files;
 using AssetHub.Api.Features.Imports;
+using AssetHub.Api.Features.Locations;
 using AssetHub.Api.Features.Maintenance;
 using AssetHub.Api.Features.Movements;
 using AssetHub.Api.Features.Notifications;
@@ -142,6 +143,7 @@ app.MapAuditEndpoints();
 app.MapMaintenanceEndpoints();
 app.MapNotificationEndpoints();
 app.MapImportExportEndpoints();
+app.MapLocationEndpoints();
 
 // OpenAPI JSON in dev — browse with Postman/Bruno/Insomnia, or paste into a UI viewer.
 if (app.Environment.IsDevelopment())

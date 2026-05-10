@@ -100,7 +100,7 @@ public static class MaintenanceEndpoints
         MaintenanceUpsertRequest req, ICurrentUser cu, AppDbContext db,
         IAuditLogger audit, INotifier notifier, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.MaintenanceWrite)) return TypedResults.Forbid();
 
         var asset = await db.Assets.FirstOrDefaultAsync(a =>
             a.Id == req.AssetId && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
@@ -140,7 +140,7 @@ public static class MaintenanceEndpoints
         Guid id, MaintenanceUpsertRequest req, ICurrentUser cu, AppDbContext db,
         IAuditLogger audit, INotifier notifier, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.MaintenanceWrite)) return TypedResults.Forbid();
         var t = await db.MaintenanceTickets.Include(x => x.Asset).Include(x => x.AssignedToUser)
             .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (t is null) return TypedResults.NotFound();
@@ -174,7 +174,7 @@ public static class MaintenanceEndpoints
         Guid id, MaintenanceStatusUpdate req, ICurrentUser cu, AppDbContext db,
         IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager", "Member")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.MaintenanceWrite)) return TypedResults.Forbid();
         var t = await db.MaintenanceTickets.Include(x => x.Asset).Include(x => x.AssignedToUser)
             .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (t is null) return TypedResults.NotFound();
@@ -194,7 +194,7 @@ public static class MaintenanceEndpoints
     static async Task<Results<NoContent, NotFound, ForbidHttpResult>> Delete(
         Guid id, ICurrentUser cu, AppDbContext db, IAuditLogger audit, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.MaintenanceWrite)) return TypedResults.Forbid();
         var t = await db.MaintenanceTickets.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (t is null) return TypedResults.NotFound();
         db.MaintenanceTickets.Remove(t);

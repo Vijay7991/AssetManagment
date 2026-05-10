@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import { api, AssetDetail, AssetTypeRecord } from "@/lib/api";
+import { api, AssetDetail, AssetTypeRecord, Location } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -29,11 +29,17 @@ export default function EditAssetPage() {
     queryFn: () => api.get<AssetTypeRecord[]>("/asset-types", accessToken),
     enabled: !!accessToken,
   });
+  const locations = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get<Location[]>("/locations", accessToken),
+    enabled: !!accessToken,
+  });
 
   const [form, setForm] = useState({
     name: "",
     description: "",
-    location: "",
+    locationId: "",
+    locationDetail: "",
     quantity: 1,
     status: "InService",
     purchasePrice: "",
@@ -51,7 +57,8 @@ export default function EditAssetPage() {
     setForm({
       name: a.name,
       description: a.description || "",
-      location: a.location || "",
+      locationId: a.locationId || "",
+      locationDetail: a.locationDetail || "",
       quantity: a.quantity,
       status: a.status,
       purchasePrice: a.purchasePrice != null ? String(a.purchasePrice) : "",
@@ -88,7 +95,8 @@ export default function EditAssetPage() {
     update.mutate({
       name: form.name,
       description: form.description || null,
-      location: form.location || null,
+      locationId: form.locationId || null,
+      locationDetail: form.locationDetail || null,
       quantity: Number(form.quantity) || 1,
       status: form.status,
       fieldValues: Object.keys(fieldValues).length ? fieldValues : null,
@@ -134,9 +142,21 @@ export default function EditAssetPage() {
                        onChange={e => setForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="location">Location</Label>
-                <Input id="location" value={form.location}
-                       onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
+                <Label htmlFor="locationId">Location</Label>
+                <Select id="locationId" value={form.locationId}
+                        onChange={e => setForm(f => ({ ...f, locationId: e.target.value }))}>
+                  <option value="">— None —</option>
+                  {locations.data?.map(l => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}{l.city ? ` (${l.city})` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="locationDetail">Spot / sub-location</Label>
+                <Input id="locationDetail" placeholder="e.g. Aisle 3 — Shelf B" value={form.locationDetail}
+                       onChange={e => setForm(f => ({ ...f, locationDetail: e.target.value }))} />
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="description">Description</Label>

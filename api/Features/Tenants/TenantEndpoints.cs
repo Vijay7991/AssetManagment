@@ -8,7 +8,12 @@ namespace AssetHub.Api.Features.Tenants;
 
 public record InviteRequest(string Email, string Role, string? Phone, string? Channel);
 public record AcceptInviteRequest(string Token, string Password, string DisplayName);
-public record MemberDto(Guid UserId, string Email, string DisplayName, string Role, DateTimeOffset JoinedAt);
+public record MemberDto(
+    Guid UserId, string Email, string DisplayName, string Role,
+    bool IsOwner, IReadOnlyList<string> Permissions, IReadOnlyList<string> ExtraPermissions,
+    DateTimeOffset JoinedAt);
+public record UpdateRoleRequest(string Role);
+public record UpdatePermissionsRequest(IReadOnlyList<string> ExtraPermissions);
 public record InviteDto(
     Guid Id,
     string Email,
@@ -26,6 +31,7 @@ public static class TenantEndpoints
         var grp = app.MapGroup("/api/tenant").RequireAuthorization().WithTags("Tenant");
         grp.MapGet("/members", ListMembers);
         grp.MapPut("/members/{userId:guid}/role", UpdateRole);
+        grp.MapPut("/members/{userId:guid}/permissions", UpdatePermissions);
         grp.MapDelete("/members/{userId:guid}", RemoveMember);
         grp.MapGet("/invites", ListInvites);
         grp.MapPost("/invites", CreateInvite);
@@ -39,33 +45,97 @@ public static class TenantEndpoints
     static async Task<Ok<List<MemberDto>>> ListMembers(
         ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        var list = await db.Memberships
+        var rows = await db.Memberships
             .Include(m => m.User)
             .Where(m => m.TenantId == cu.TenantId)
-            .OrderBy(m => m.User.DisplayName)
-            .Select(m => new MemberDto(m.User.Id, m.User.Email, m.User.DisplayName, m.Role, m.CreatedAt))
+            .OrderByDescending(m => m.IsOwner)
+            .ThenBy(m => m.User.DisplayName)
             .ToListAsync(ct);
+
+        var list = rows.Select(m => new MemberDto(
+            m.User.Id, m.User.Email, m.User.DisplayName, m.Role,
+            m.IsOwner,
+            Perms.Effective(m),
+            Perms.ParseExtras(m.ExtraPermissions),
+            m.CreatedAt
+        )).ToList();
         return TypedResults.Ok(list);
     }
 
-    static async Task<Results<NoContent, NotFound, ForbidHttpResult>> UpdateRole(
-        Guid userId, InviteRequest req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
+    static async Task<Results<NoContent, NotFound, ForbidHttpResult, BadRequest<string>>> UpdateRole(
+        Guid userId, UpdateRoleRequest req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.MembersWrite)) return TypedResults.Forbid();
         var m = await db.Memberships.FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
         if (m is null) return TypedResults.NotFound();
-        m.Role = NormalizeRole(req.Role);
+
+        var newRole = NormalizeRole(req.Role);
+
+        // The workspace owner is always Admin and cannot be demoted.
+        if (m.IsOwner && newRole != "Admin")
+            return TypedResults.BadRequest("The workspace owner must remain an Admin.");
+
+        // Cannot demote the last Admin.
+        if (m.Role == "Admin" && newRole != "Admin")
+        {
+            var adminCount = await db.Memberships
+                .CountAsync(x => x.TenantId == cu.TenantId && x.Role == "Admin", ct);
+            if (adminCount <= 1)
+                return TypedResults.BadRequest("Cannot demote the last Admin. Promote someone else first.");
+        }
+
+        m.Role = newRole;
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
+    }
+
+    static async Task<Results<Ok<MemberDto>, NotFound, ForbidHttpResult, BadRequest<string>>> UpdatePermissions(
+        Guid userId, UpdatePermissionsRequest req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
+    {
+        if (!cu.Can(Perms.MembersWrite)) return TypedResults.Forbid();
+        var m = await db.Memberships
+            .Include(x => x.User)
+            .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
+        if (m is null) return TypedResults.NotFound();
+
+        // Reject unknown permissions to keep the data clean.
+        var unknown = (req.ExtraPermissions ?? Array.Empty<string>())
+            .Where(p => !string.IsNullOrWhiteSpace(p) && !Perms.IsKnownPermission(p))
+            .ToArray();
+        if (unknown.Length > 0)
+            return TypedResults.BadRequest($"Unknown permission(s): {string.Join(", ", unknown)}");
+
+        m.ExtraPermissions = Perms.SerializeExtras(req.ExtraPermissions);
+        await db.SaveChangesAsync(ct);
+
+        return TypedResults.Ok(new MemberDto(
+            m.User.Id, m.User.Email, m.User.DisplayName, m.Role,
+            m.IsOwner,
+            Perms.Effective(m),
+            Perms.ParseExtras(m.ExtraPermissions),
+            m.CreatedAt));
     }
 
     static async Task<Results<NoContent, NotFound, ForbidHttpResult, BadRequest<string>>> RemoveMember(
         Guid userId, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.MembersWrite)) return TypedResults.Forbid();
         if (userId == cu.UserId) return TypedResults.BadRequest("You cannot remove yourself.");
+
         var m = await db.Memberships.FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
         if (m is null) return TypedResults.NotFound();
+
+        if (m.IsOwner)
+            return TypedResults.BadRequest("The workspace owner cannot be removed.");
+
+        if (m.Role == "Admin")
+        {
+            var adminCount = await db.Memberships
+                .CountAsync(x => x.TenantId == cu.TenantId && x.Role == "Admin", ct);
+            if (adminCount <= 1)
+                return TypedResults.BadRequest("Cannot remove the last Admin.");
+        }
+
         db.Memberships.Remove(m);
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();

@@ -26,7 +26,9 @@ public record AuthResponse(
 
 public record UserDto(Guid Id, string Email, string DisplayName, string? Phone);
 
-public record TenantDto(Guid Id, string Name, string Slug, string Role, string Plan);
+public record TenantDto(
+    Guid Id, string Name, string Slug, string Role, string Plan,
+    bool IsOwner, IReadOnlyList<string> Permissions);
 
 public record InviteCreateRequest(
     [Required, EmailAddress] string Email,

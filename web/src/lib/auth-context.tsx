@@ -140,3 +140,10 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
   return ctx;
 }
+
+/// Returns whether the current user has a given permission in the active tenant.
+export function useCan(permission: string): boolean {
+  const { activeTenant } = useAuth();
+  if (!activeTenant) return false;
+  return activeTenant.permissions?.includes(permission) ?? false;
+}

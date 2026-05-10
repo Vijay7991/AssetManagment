@@ -18,7 +18,8 @@ public class JwtOptions
 
 public interface IJwtTokenService
 {
-    (string AccessToken, DateTimeOffset ExpiresAt) IssueAccessToken(User user, Guid tenantId, string role);
+    (string AccessToken, DateTimeOffset ExpiresAt) IssueAccessToken(
+        User user, Guid tenantId, string role, IEnumerable<string> permissions, bool isOwner);
     (string PlainToken, string TokenHash, DateTimeOffset ExpiresAt) IssueRefreshToken();
     string HashToken(string plain);
 }
@@ -28,11 +29,12 @@ public class JwtTokenService : IJwtTokenService
     private readonly JwtOptions _opts;
     public JwtTokenService(JwtOptions opts) => _opts = opts;
 
-    public (string, DateTimeOffset) IssueAccessToken(User user, Guid tenantId, string role)
+    public (string, DateTimeOffset) IssueAccessToken(
+        User user, Guid tenantId, string role, IEnumerable<string> permissions, bool isOwner)
     {
         var expires = DateTimeOffset.UtcNow.AddMinutes(_opts.AccessTtlMinutes);
-        // Short, unambiguous claim names. `tenant_id` is canonical; `tid` retained
-        // for any old tokens still in client storage.
+        var permsCsv = string.Join(",", permissions ?? Array.Empty<string>());
+
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
@@ -41,6 +43,8 @@ public class JwtTokenService : IJwtTokenService
             new("role", role),
             new("tenant_id", tenantId.ToString()),
             new("tid", tenantId.ToString()),
+            new("perms", permsCsv),
+            new("owner", isOwner ? "true" : "false"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

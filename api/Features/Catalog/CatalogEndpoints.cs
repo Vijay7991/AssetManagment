@@ -46,7 +46,7 @@ public static class CatalogEndpoints
     static async Task<Results<Ok<CategoryDto>, ForbidHttpResult>> CreateCategory(
         CategoryUpsert req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.CatalogWrite)) return TypedResults.Forbid();
         var c = new AssetCategory
         {
             TenantId = cu.TenantId!.Value,
@@ -63,7 +63,7 @@ public static class CatalogEndpoints
     static async Task<Results<Ok<CategoryDto>, NotFound, ForbidHttpResult>> UpdateCategory(
         Guid id, CategoryUpsert req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.CatalogWrite)) return TypedResults.Forbid();
         var c = await db.Categories.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (c is null) return TypedResults.NotFound();
         c.Name = req.Name.Trim();
@@ -77,7 +77,7 @@ public static class CatalogEndpoints
     static async Task<Results<NoContent, NotFound, Conflict<string>, ForbidHttpResult>> DeleteCategory(
         Guid id, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.CatalogWrite)) return TypedResults.Forbid();
         var c = await db.Categories.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (c is null) return TypedResults.NotFound();
         var inUse = await db.AssetTypes.AnyAsync(t => t.CategoryId == id, ct);
@@ -116,7 +116,7 @@ public static class CatalogEndpoints
     static async Task<Results<Ok<AssetTypeDto>, ForbidHttpResult, BadRequest<string>>> CreateType(
         AssetTypeUpsert req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.CatalogWrite)) return TypedResults.Forbid();
         if (!await db.Categories.AnyAsync(c => c.Id == req.CategoryId && c.TenantId == cu.TenantId, ct))
             return TypedResults.BadRequest("Category not found in this tenant.");
 
@@ -138,7 +138,7 @@ public static class CatalogEndpoints
     static async Task<Results<Ok<AssetTypeDto>, NotFound, ForbidHttpResult>> UpdateType(
         Guid id, AssetTypeUpsert req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.CatalogWrite)) return TypedResults.Forbid();
         var t = await db.AssetTypes.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (t is null) return TypedResults.NotFound();
         t.Name = req.Name.Trim();
@@ -153,7 +153,7 @@ public static class CatalogEndpoints
     static async Task<Results<NoContent, NotFound, Conflict<string>, ForbidHttpResult>> DeleteType(
         Guid id, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
-        if (!cu.HasRole("Admin", "Manager")) return TypedResults.Forbid();
+        if (!cu.Can(Perms.CatalogWrite)) return TypedResults.Forbid();
         var t = await db.AssetTypes.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (t is null) return TypedResults.NotFound();
         var inUse = await db.Assets.AnyAsync(a => a.AssetTypeId == id, ct);
