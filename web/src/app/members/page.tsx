@@ -8,17 +8,28 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/card";
-import { UserPlus, Users, X } from "lucide-react";
+import { Copy, Mail, MessageCircle, UserPlus, Users, X } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 
 type Member = { userId: string; email: string; displayName: string; role: string; joinedAt: string };
-type Invite = { id: string; email: string; role: string; expiresAt: string; accepted: boolean };
+type Invite = {
+  id: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  expiresAt: string;
+  accepted: boolean;
+  inviteLink: string;
+  whatsAppLink: string | null;
+};
 
 export default function MembersPage() {
   const { accessToken, activeTenant } = useAuth();
   const qc = useQueryClient();
-  const [form, setForm] = useState({ email: "", role: "Member" });
+  const [form, setForm] = useState({ email: "", role: "Member", phone: "", channel: "Email" });
   const [err, setErr] = useState<string | null>(null);
+  const [lastInvite, setLastInvite] = useState<Invite | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const isAdmin = activeTenant?.role === "Admin";
 
@@ -34,11 +45,16 @@ export default function MembersPage() {
   });
 
   const invite = useMutation({
-    mutationFn: (body: any) => api.post("/tenant/invites", body, accessToken),
-    onSuccess: () => {
+    mutationFn: (body: any) => api.post<Invite>("/tenant/invites", body, accessToken),
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["invites"] });
-      setForm({ email: "", role: "Member" });
+      setForm({ email: "", role: "Member", phone: "", channel: form.channel });
       setErr(null);
+      setLastInvite(created);
+      // Open WhatsApp automatically when channel is WhatsApp
+      if (created.whatsAppLink && form.channel === "WhatsApp") {
+        window.open(created.whatsAppLink, "_blank", "noopener");
+      }
     },
     onError: (e: any) => setErr(e?.message || "Could not create invite."),
   });
@@ -52,6 +68,13 @@ export default function MembersPage() {
     mutationFn: (userId: string) => api.del(`/tenant/members/${userId}`, accessToken),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["members"] }),
   });
+
+  function copy(text: string, key: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(c => c === key ? null : c), 2000);
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -101,12 +124,53 @@ export default function MembersPage() {
               <CardTitle>Invite teammate</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={e => { e.preventDefault(); invite.mutate(form); }} className="space-y-3">
+              <form onSubmit={e => {
+                e.preventDefault();
+                if (form.channel === "WhatsApp" && !form.phone) {
+                  setErr("Phone number required for WhatsApp.");
+                  return;
+                }
+                invite.mutate({
+                  email: form.email,
+                  role: form.role,
+                  phone: form.phone || null,
+                  channel: form.channel,
+                });
+              }} className="space-y-3">
                 <div className="space-y-2">
-                  <Label htmlFor="iemail">Email</Label>
-                  <Input id="iemail" type="email" required value={form.email}
+                  <Label>Channel</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" size="sm"
+                      variant={form.channel === "Email" ? "default" : "outline"}
+                      onClick={() => setForm(f => ({ ...f, channel: "Email" }))}>
+                      <Mail className="mr-2 h-4 w-4" /> Email
+                    </Button>
+                    <Button type="button" size="sm"
+                      variant={form.channel === "WhatsApp" ? "default" : "outline"}
+                      onClick={() => setForm(f => ({ ...f, channel: "WhatsApp" }))}>
+                      <MessageCircle className="mr-2 h-4 w-4" /> WhatsApp
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="iemail">Email{form.channel === "WhatsApp" ? " (optional)" : ""}</Label>
+                  <Input id="iemail" type="email" required={form.channel !== "WhatsApp"}
+                         value={form.email}
                          onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
                 </div>
+
+                {form.channel === "WhatsApp" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="iphone">Phone (with country code, digits only)</Label>
+                    <Input id="iphone" placeholder="e.g. 919876543210" value={form.phone}
+                           onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, "") }))} />
+                    <p className="text-xs text-muted-foreground">
+                      Include country code, no + or spaces. Indian number example: 91 then 10 digits.
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="irole">Role</Label>
                   <Select id="irole" value={form.role}
@@ -116,24 +180,65 @@ export default function MembersPage() {
                     <option>Admin</option>
                   </Select>
                 </div>
+
                 {err && <p className="text-sm text-destructive">{err}</p>}
                 <Button type="submit" disabled={invite.isPending}>
-                  <UserPlus className="mr-2 h-4 w-4" />{invite.isPending ? "Sending…" : "Send invite"}
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  {invite.isPending ? "Sending…" : "Create invite"}
                 </Button>
               </form>
+
+              {lastInvite && (
+                <div className="mt-4 rounded-md border p-3 text-xs space-y-2">
+                  <p className="font-medium text-foreground text-sm">Invite created.</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-muted-foreground">{lastInvite.inviteLink}</span>
+                    <Button size="sm" variant="outline"
+                            onClick={() => copy(lastInvite.inviteLink, "link")}>
+                      <Copy className="mr-1 h-3 w-3" />{copied === "link" ? "Copied" : "Copy"}
+                    </Button>
+                  </div>
+                  {lastInvite.whatsAppLink && (
+                    <Button asChild size="sm" className="w-full bg-emerald-600 text-white hover:bg-emerald-700">
+                      <a href={lastInvite.whatsAppLink} target="_blank" rel="noopener noreferrer">
+                        <MessageCircle className="mr-2 h-4 w-4" /> Open WhatsApp
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              )}
 
               <div className="mt-6 space-y-2">
                 <p className="text-sm font-medium">Pending invites</p>
                 {invites.data && invites.data.length === 0 && (
                   <p className="text-xs text-muted-foreground">None.</p>
                 )}
-                <ul className="space-y-1">
+                <ul className="space-y-2">
                   {invites.data?.filter(i => !i.accepted).map(i => (
-                    <li key={i.id} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="truncate">{i.email} <span className="text-muted-foreground">· {i.role}</span></span>
-                      <Button size="icon" variant="ghost" onClick={() => revokeInvite.mutate(i.id)}>
-                        <X className="h-3 w-3" />
-                      </Button>
+                    <li key={i.id} className="flex flex-col gap-1 rounded-md border p-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate">
+                          {i.email || i.phone}
+                          <span className="text-muted-foreground"> · {i.role}</span>
+                        </span>
+                        <Button size="icon" variant="ghost" onClick={() => revokeInvite.mutate(i.id)}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <Button size="sm" variant="outline" className="h-7 text-xs"
+                                onClick={() => copy(i.inviteLink, `link-${i.id}`)}>
+                          <Copy className="mr-1 h-3 w-3" />
+                          {copied === `link-${i.id}` ? "Copied" : "Copy link"}
+                        </Button>
+                        {i.whatsAppLink && (
+                          <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                            <a href={i.whatsAppLink} target="_blank" rel="noopener noreferrer">
+                              <MessageCircle className="mr-1 h-3 w-3" /> WhatsApp
+                            </a>
+                          </Button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>

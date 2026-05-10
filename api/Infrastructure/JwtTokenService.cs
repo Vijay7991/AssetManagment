@@ -31,18 +31,26 @@ public class JwtTokenService : IJwtTokenService
     public (string, DateTimeOffset) IssueAccessToken(User user, Guid tenantId, string role)
     {
         var expires = DateTimeOffset.UtcNow.AddMinutes(_opts.AccessTtlMinutes);
+        // Short, unambiguous claim names. `tenant_id` is canonical; `tid` retained
+        // for any old tokens still in client storage.
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Email, user.Email),
-            new(ClaimTypes.Name, user.DisplayName),
-            new(ClaimTypes.Role, role),
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, user.Email),
+            new("name", user.DisplayName),
+            new("role", role),
+            new("tenant_id", tenantId.ToString()),
             new("tid", tenantId.ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_opts.Secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        // Disable outbound claim-type mapping so what we put in is what comes out.
+        var handler = new JwtSecurityTokenHandler();
+        handler.OutboundClaimTypeMap.Clear();
+
         var jwt = new JwtSecurityToken(
             issuer: _opts.Issuer,
             audience: _opts.Audience,
@@ -50,7 +58,7 @@ public class JwtTokenService : IJwtTokenService
             expires: expires.UtcDateTime,
             signingCredentials: creds);
 
-        return (new JwtSecurityTokenHandler().WriteToken(jwt), expires);
+        return (handler.WriteToken(jwt), expires);
     }
 
     public (string, string, DateTimeOffset) IssueRefreshToken()

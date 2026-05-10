@@ -95,9 +95,11 @@ public static class CatalogEndpoints
         var q = db.AssetTypes.Where(t => t.TenantId == cu.TenantId);
         if (categoryId.HasValue) q = q.Where(t => t.CategoryId == categoryId.Value);
         var list = await q.OrderBy(t => t.Name).ToListAsync(ct);
+        // Use the JsonDocument's own RootElement directly. EF owns the document
+        // and the serializer reads it before the DbContext is disposed. No need
+        // to round-trip through JsonDocument.Parse (which leaks docs to GC).
         return TypedResults.Ok(list.Select(t => new AssetTypeDto(
-            t.Id, t.CategoryId, t.Name, t.Icon,
-            t.FieldSchema is null ? null : JsonDocument.Parse(t.FieldSchema.RootElement.GetRawText()).RootElement
+            t.Id, t.CategoryId, t.Name, t.Icon, t.FieldSchema?.RootElement
         )).ToList());
     }
 

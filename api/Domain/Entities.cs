@@ -64,6 +64,8 @@ public class TenantInvite
     public Guid TenantId { get; set; }
     public Tenant Tenant { get; set; } = null!;
     [MaxLength(180)] public string Email { get; set; } = "";
+    [MaxLength(20)]  public string? Phone { get; set; }
+    [MaxLength(20)]  public string? Channel { get; set; }   // "Email" or "WhatsApp"
     [MaxLength(40)]  public string Role { get; set; } = "Member";
     [MaxLength(80)]  public string Token { get; set; } = "";
     public DateTimeOffset ExpiresAt { get; set; }

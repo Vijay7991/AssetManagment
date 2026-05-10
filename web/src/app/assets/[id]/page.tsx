@@ -96,6 +96,11 @@ export default function AssetDetailPage() {
           <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "Move" })}>
             <MapPin className="mr-2 h-4 w-4" /> Move
           </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/assets/${params.id}/edit`}>
+              <Pencil className="mr-2 h-4 w-4" /> Edit
+            </Link>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Print label
           </Button>

@@ -38,10 +38,16 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
     opts.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
 // ─── Auth ────────────────────────────────────────────────────────────
+// Disable JsonWebTokenHandler's default short→long claim-name mapping at the
+// process level so "tenant_id", "sub", etc. stay exactly as we issued them.
+Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler.DefaultMapInboundClaims = false;
+System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
         o.RequireHttpsMetadata = false;
+        o.MapInboundClaims = false;
         o.TokenValidationParameters = new TokenValidationParameters
         {
             ValidIssuer = jwtOpts.Issuer,
@@ -52,6 +58,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2),
+            NameClaimType = "name",
+            RoleClaimType = "role",
         };
     });
 builder.Services.AddAuthorization();
@@ -64,6 +72,10 @@ builder.Services.AddSingleton<IBarcodeRenderer, BarcodeRenderer>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<INotifier, Notifier>();
+// Register the warranty service as a singleton AND as a hosted service so we
+// can both run it on the schedule and resolve it for the manual-trigger endpoint.
+builder.Services.AddSingleton<WarrantyNotificationService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WarrantyNotificationService>());
 
 // ─── CORS ────────────────────────────────────────────────────────────
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
@@ -95,6 +107,28 @@ app.UseAuthorization();
 // Health
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", time = DateTimeOffset.UtcNow }))
    .AllowAnonymous();
+
+// Whoami — diagnostic endpoint, returns parsed user/tenant + raw claims
+app.MapGet("/api/whoami", (ICurrentUser cu, HttpContext ctx) =>
+{
+    var claims = ctx.User.Claims.Select(c => new { type = c.Type, value = c.Value }).ToList();
+    return Results.Ok(new {
+        cu.IsAuthenticated,
+        cu.UserId,
+        cu.TenantId,
+        cu.Role,
+        cu.Email,
+        claims,
+    });
+}).RequireAuthorization();
+
+// Manual trigger for warranty scan — useful for testing without waiting
+app.MapPost("/api/admin/scan-warranties", async (
+    WarrantyNotificationService svc, CancellationToken ct) =>
+{
+    await svc.ScanOnceAsync(ct);
+    return Results.Ok(new { ran = true });
+}).RequireAuthorization();
 
 // Feature endpoints
 app.MapAuthEndpoints();
