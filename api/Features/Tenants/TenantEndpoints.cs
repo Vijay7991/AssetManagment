@@ -10,10 +10,12 @@ public record InviteRequest(string Email, string Role, string? Phone, string? Ch
 public record AcceptInviteRequest(string Token, string Password, string DisplayName);
 public record MemberDto(
     Guid UserId, string Email, string DisplayName, string Role,
-    bool IsOwner, IReadOnlyList<string> Permissions, IReadOnlyList<string> ExtraPermissions,
+    bool IsOwner, bool IsActive, IReadOnlyList<string> Permissions, IReadOnlyList<string> ExtraPermissions,
     DateTimeOffset JoinedAt);
 public record UpdateRoleRequest(string Role);
 public record UpdatePermissionsRequest(IReadOnlyList<string> ExtraPermissions);
+public record UpdateActiveRequest(bool IsActive);
+public record AdminResetResponse(string ResetLink, DateTimeOffset ExpiresAt);
 public record InviteDto(
     Guid Id,
     string Email,
@@ -32,6 +34,8 @@ public static class TenantEndpoints
         grp.MapGet("/members", ListMembers);
         grp.MapPut("/members/{userId:guid}/role", UpdateRole);
         grp.MapPut("/members/{userId:guid}/permissions", UpdatePermissions);
+        grp.MapPut("/members/{userId:guid}/active", UpdateActive);
+        grp.MapPost("/members/{userId:guid}/reset-password", AdminResetPassword);
         grp.MapDelete("/members/{userId:guid}", RemoveMember);
         grp.MapGet("/invites", ListInvites);
         grp.MapPost("/invites", CreateInvite);
@@ -54,7 +58,7 @@ public static class TenantEndpoints
 
         var list = rows.Select(m => new MemberDto(
             m.User.Id, m.User.Email, m.User.DisplayName, m.Role,
-            m.IsOwner,
+            m.IsOwner, m.User.IsActive,
             Perms.Effective(m),
             Perms.ParseExtras(m.ExtraPermissions),
             m.CreatedAt
@@ -110,10 +114,87 @@ public static class TenantEndpoints
 
         return TypedResults.Ok(new MemberDto(
             m.User.Id, m.User.Email, m.User.DisplayName, m.Role,
-            m.IsOwner,
+            m.IsOwner, m.User.IsActive,
             Perms.Effective(m),
             Perms.ParseExtras(m.ExtraPermissions),
             m.CreatedAt));
+    }
+
+    static async Task<Results<NoContent, NotFound, ForbidHttpResult, BadRequest<string>>> UpdateActive(
+        Guid userId, UpdateActiveRequest req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
+    {
+        if (!cu.Can(Perms.MembersWrite)) return TypedResults.Forbid();
+        if (userId == cu.UserId) return TypedResults.BadRequest("You cannot deactivate yourself.");
+
+        var m = await db.Memberships
+            .Include(x => x.User)
+            .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
+        if (m is null) return TypedResults.NotFound();
+
+        // Owners are protected from being switched off — they'd lock themselves
+        // out of the workspace they created. Use a different tenant admin instead.
+        if (m.IsOwner && !req.IsActive)
+            return TypedResults.BadRequest("The workspace owner cannot be deactivated.");
+
+        if (m.User.IsActive == req.IsActive) return TypedResults.NoContent();
+
+        m.User.IsActive = req.IsActive;
+        m.User.DeactivatedAt = req.IsActive ? null : DateTimeOffset.UtcNow;
+
+        // When deactivating, revoke active sessions so the user is signed out
+        // everywhere immediately. When reactivating, leave the (already expired)
+        // tokens alone — they'll just fail to refresh.
+        if (!req.IsActive)
+        {
+            var live = await db.RefreshTokens
+                .Where(r => r.UserId == userId && r.RevokedAt == null)
+                .ToListAsync(ct);
+            foreach (var r in live) r.RevokedAt = DateTimeOffset.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return TypedResults.NoContent();
+    }
+
+    static async Task<Results<Ok<AdminResetResponse>, NotFound, ForbidHttpResult>> AdminResetPassword(
+        Guid userId, ICurrentUser cu, AppDbContext db, IJwtTokenService jwt,
+        IEmailSender mail, HttpRequest http, CancellationToken ct)
+    {
+        if (!cu.Can(Perms.MembersWrite)) return TypedResults.Forbid();
+
+        var m = await db.Memberships
+            .Include(x => x.User)
+            .Include(x => x.Tenant)
+            .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
+        if (m is null) return TypedResults.NotFound();
+
+        var (plain, hash, expires) = jwt.IssuePasswordResetToken();
+        db.PasswordResetTokens.Add(new PasswordResetToken
+        {
+            UserId = userId,
+            TokenHash = hash,
+            Source = "Admin",
+            IssuedByUserId = cu.UserId,
+            ExpiresAt = expires,
+        });
+        await db.SaveChangesAsync(ct);
+
+        var baseUrl = $"{http.Scheme}://{http.Host}";
+        var link = $"{baseUrl}/reset-password?token={plain}";
+
+        _ = mail.SendAsync(
+            m.User.Email,
+            $"Password reset for {m.Tenant.Name}",
+            $"<p>Hi {System.Net.WebUtility.HtmlEncode(m.User.DisplayName)},</p>" +
+            $"<p>An administrator of <b>{System.Net.WebUtility.HtmlEncode(m.Tenant.Name)}</b> has " +
+            $"initiated a password reset for your AssetHub account.</p>" +
+            $"<p><a href=\"{link}\">Set a new password</a></p>" +
+            "<p>This link expires in 1 hour.</p>");
+
+        // We hand the link back to the admin too — handy when MailHog isn't being
+        // watched, or for closed/offline environments where the user is sitting
+        // next to the admin.
+        return TypedResults.Ok(new AdminResetResponse(link, expires));
     }
 
     static async Task<Results<NoContent, NotFound, ForbidHttpResult, BadRequest<string>>> RemoveMember(
@@ -156,16 +237,66 @@ public static class TenantEndpoints
 
     static async Task<Results<Ok<InviteDto>, ForbidHttpResult, BadRequest<string>>> CreateInvite(
         InviteRequest req, ICurrentUser cu, AppDbContext db, IEmailSender mail,
+        IMailHealth mailHealth, IConfiguration config,
         HttpRequest http, CancellationToken ct)
     {
         if (!cu.HasRole("Admin")) return TypedResults.Forbid();
 
+        var emailLower = req.Email.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(emailLower))
+            return TypedResults.BadRequest("Email is required.");
+
         // Channel: "Email" (default), "WhatsApp", or anything else custom.
         var channel = string.IsNullOrWhiteSpace(req.Channel) ? "Email" : req.Channel.Trim();
         var phone = NormalizePhone(req.Phone);
+        var isWhatsApp = channel.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase);
+        var isEmail = !isWhatsApp;
 
-        if (channel.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(phone))
+        if (isWhatsApp && string.IsNullOrEmpty(phone))
             return TypedResults.BadRequest("Phone number is required for WhatsApp invites.");
+
+        // ── Restriction checks ────────────────────────────────────────────
+
+        // 1. The platform-level root admin is special and lives outside the
+        //    multi-tenant model. Refuse to invite that email into a workspace.
+        var rootEmail = config["RootAdmin:Email"]?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrEmpty(rootEmail) && rootEmail == emailLower)
+            return TypedResults.BadRequest(
+                "This email is reserved for the platform root admin and cannot be invited to a workspace.");
+
+        // 2. Already a member of THIS tenant? They don't need an invite.
+        var existingMember = await db.Memberships
+            .Include(m => m.User)
+            .FirstOrDefaultAsync(m => m.TenantId == cu.TenantId && m.User.Email == emailLower, ct);
+        if (existingMember is not null)
+            return TypedResults.BadRequest($"{emailLower} is already a member of this workspace.");
+
+        // 3. Email already exists anywhere in the system — per policy, accounts
+        //    are one-per-email and can't be invited a second time even into a
+        //    different workspace. The original admin can re-issue access through
+        //    their workspace if needed.
+        if (await db.Users.AnyAsync(u => u.Email == emailLower, ct))
+            return TypedResults.BadRequest(
+                "An account with this email already exists. Ask them to sign in and join a workspace from there.");
+
+        // 4. A pending unaccepted invite to this tenant already exists — refuse
+        //    to issue a duplicate so we don't spam the recipient with two links.
+        if (await db.Invites.AnyAsync(i =>
+                i.TenantId == cu.TenantId && i.Email == emailLower &&
+                i.AcceptedAt == null && i.ExpiresAt > DateTimeOffset.UtcNow, ct))
+            return TypedResults.BadRequest(
+                "A pending invite for this email already exists. Revoke it first or wait for it to expire.");
+
+        // 5. Email channel selected but the mail server isn't reachable — refuse
+        //    rather than silently dropping the message. The UI hides this option
+        //    when mail is down; this is the server-side seatbelt.
+        if (isEmail)
+        {
+            var health = await mailHealth.GetAsync(ct);
+            if (!health.Enabled)
+                return TypedResults.BadRequest(
+                    "Email delivery is currently unavailable on this server. Send the invite via WhatsApp instead.");
+        }
 
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
         var tenant = await db.Tenants.FirstAsync(t => t.Id == cu.TenantId!.Value, ct);
@@ -174,7 +305,7 @@ public static class TenantEndpoints
         {
             TenantId = cu.TenantId!.Value,
             Tenant = tenant,
-            Email = req.Email.Trim().ToLowerInvariant(),
+            Email = emailLower,
             Phone = phone,
             Channel = channel,
             Role = NormalizeRole(req.Role),
@@ -187,9 +318,9 @@ public static class TenantEndpoints
 
         var baseUrl = $"{http.Scheme}://{http.Host}";
 
-        // Always send the email copy if we have an email — cheap insurance.
-        if (!channel.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase) ||
-            (!string.IsNullOrEmpty(invite.Email) && channel.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase) == false))
+        // Only send the email copy when the chosen channel is Email — for the
+        // WhatsApp flow the admin will share the link directly, no SMTP needed.
+        if (isEmail)
         {
             var link = $"{baseUrl}/invite/{token}";
             _ = mail.SendAsync(invite.Email,

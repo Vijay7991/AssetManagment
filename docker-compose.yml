@@ -37,6 +37,7 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE}
       Jwt__AccessTtlMinutes: ${JWT_ACCESS_TTL_MINUTES}
       Jwt__RefreshTtlDays: ${JWT_REFRESH_TTL_DAYS}
+      RootAdmin__Email: ${ROOT_ADMIN_EMAIL:-}
       Storage__UploadsPath: /app/uploads
       Smtp__Host: ${SMTP_HOST}
       Smtp__Port: ${SMTP_PORT}

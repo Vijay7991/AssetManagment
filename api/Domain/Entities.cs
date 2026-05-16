@@ -29,11 +29,41 @@ public class User
     [MaxLength(120)] public string DisplayName { get; set; } = "";
     [MaxLength(200)] public string PasswordHash { get; set; } = "";
     public bool EmailVerified { get; set; }
+
+    /// Account is enabled. Set to false to block sign-in and revoke active sessions.
+    public bool IsActive { get; set; } = true;
+
+    /// Platform-level super admin — sees and manages every tenant and every account
+    /// across the install. Bootstrapped from the RootAdmin:Email config value.
+    public bool IsRootAdmin { get; set; }
+
+    /// Set when an admin (root or tenant) deactivates the account. Audit-only.
+    public DateTimeOffset? DeactivatedAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; }
 
     public ICollection<TenantMembership> Memberships { get; set; } = new List<TenantMembership>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public ICollection<PasswordResetToken> PasswordResets { get; set; } = new List<PasswordResetToken>();
+}
+
+/// One-time token issued either by the user (forgot password) or by an admin
+/// (admin-initiated reset). Hashed in the DB so a DB leak can't be used to take
+/// over accounts. Single-use: ConsumedAt is set when the user resets, after which
+/// it is rejected.
+public class PasswordResetToken
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public User User { get; set; } = null!;
+    [MaxLength(200)] public string TokenHash { get; set; } = "";
+    /// "Self" (user clicked forgot-password) or "Admin" (admin pushed a reset link).
+    [MaxLength(20)]  public string Source { get; set; } = "Self";
+    public Guid? IssuedByUserId { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? ConsumedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class TenantMembership

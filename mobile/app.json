@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "AssetHub",
+    "slug": "assethub-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "assethub",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.assethub.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "AssetHub needs the camera to scan QR codes on asset labels.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.assethub.mobile",
+      "permissions": [
+        "CAMERA"
+      ],
+      "usesCleartextTraffic": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "AssetHub needs the camera to scan QR codes on asset labels."
+        }
+      ],
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

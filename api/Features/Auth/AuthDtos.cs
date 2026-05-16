@@ -24,7 +24,18 @@ public record AuthResponse(
     TenantDto ActiveTenant,
     IReadOnlyList<TenantDto> Tenants);
 
-public record UserDto(Guid Id, string Email, string DisplayName, string? Phone);
+public record UserDto(Guid Id, string Email, string DisplayName, string? Phone, bool IsRootAdmin = false);
+
+public record ForgotPasswordRequest(
+    [Required, EmailAddress] string Email);
+
+public record ResetPasswordRequest(
+    [Required] string Token,
+    [Required, MinLength(8), MaxLength(120)] string Password);
+
+public record ChangePasswordRequest(
+    [Required] string CurrentPassword,
+    [Required, MinLength(8), MaxLength(120)] string NewPassword);
 
 public record TenantDto(
     Guid Id, string Name, string Slug, string Role, string Plan,

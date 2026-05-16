@@ -9,6 +9,7 @@ using AssetHub.Api.Features.Locations;
 using AssetHub.Api.Features.Maintenance;
 using AssetHub.Api.Features.Movements;
 using AssetHub.Api.Features.Notifications;
+using AssetHub.Api.Features.RootAdmin;
 using AssetHub.Api.Features.Tags;
 using AssetHub.Api.Features.Tenants;
 using AssetHub.Api.Infrastructure;
@@ -71,6 +72,7 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IBarcodeRenderer, BarcodeRenderer>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddSingleton<IMailHealth, MailHealth>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<INotifier, Notifier>();
 // Register the warranty service as a singleton AND as a hosted service so we
@@ -109,6 +111,19 @@ app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", time = DateTimeOffset.UtcNow }))
    .AllowAnonymous();
 
+// Mail health — used by the UI to decide whether to offer the Email invite
+// channel. Public so the login/forgot-password screens can also adapt if they
+// want to surface "we can't actually email you a link right now".
+app.MapGet("/api/health/mail", async (IMailHealth probe, CancellationToken ct) =>
+{
+    var status = await probe.GetAsync(ct);
+    return Results.Ok(new {
+        enabled = status.Enabled,
+        lastChecked = status.LastChecked,
+        reason = status.Reason,
+    });
+}).AllowAnonymous();
+
 // Whoami — diagnostic endpoint, returns parsed user/tenant + raw claims
 app.MapGet("/api/whoami", (ICurrentUser cu, HttpContext ctx) =>
 {
@@ -144,6 +159,7 @@ app.MapMaintenanceEndpoints();
 app.MapNotificationEndpoints();
 app.MapImportExportEndpoints();
 app.MapLocationEndpoints();
+app.MapRootAdminEndpoints();
 
 // OpenAPI JSON in dev — browse with Postman/Bruno/Insomnia, or paste into a UI viewer.
 if (app.Environment.IsDevelopment())
@@ -170,6 +186,33 @@ using (var scope = app.Services.CreateScope())
         {
             log.LogWarning("DB not ready yet ({attempt}/10): {message}", attempts, ex.Message);
             await Task.Delay(TimeSpan.FromSeconds(3));
+        }
+    }
+
+    // Promote the configured email to root admin if it already exists. If the
+    // address hasn't signed up yet, the flag will be set on next startup once
+    // the account is created — running this idempotently every boot is fine.
+    var rootEmail = builder.Configuration["RootAdmin:Email"]?.Trim().ToLowerInvariant();
+    if (!string.IsNullOrEmpty(rootEmail))
+    {
+        var rootUser = await db.Users.FirstOrDefaultAsync(u => u.Email == rootEmail);
+        if (rootUser is not null)
+        {
+            if (!rootUser.IsRootAdmin || !rootUser.IsActive)
+            {
+                rootUser.IsRootAdmin = true;
+                rootUser.IsActive = true;
+                rootUser.DeactivatedAt = null;
+                await db.SaveChangesAsync();
+                log.LogInformation("Root admin promoted: {Email}", rootEmail);
+            }
+        }
+        else
+        {
+            log.LogInformation(
+                "RootAdmin:Email is set to {Email} but no such account exists yet. " +
+                "The user will be promoted automatically after they sign up.",
+                rootEmail);
         }
     }
 }

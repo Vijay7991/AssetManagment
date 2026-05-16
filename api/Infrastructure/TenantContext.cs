@@ -14,6 +14,7 @@ public interface ICurrentUser
     string? Email { get; }
     bool IsAuthenticated { get; }
     bool IsOwner { get; }
+    bool IsRootAdmin { get; }
     IReadOnlyCollection<string> Permissions { get; }
     bool HasRole(params string[] roles);
     bool Can(string permission);
@@ -44,6 +45,7 @@ public class CurrentUser : ICurrentUser
         Role = u.FindFirstValue(ClaimTypes.Role) ?? u.FindFirstValue("role");
         Email = u.FindFirstValue(ClaimTypes.Email) ?? u.FindFirstValue("email");
         IsOwner = string.Equals(u.FindFirstValue("owner"), "true", StringComparison.OrdinalIgnoreCase);
+        IsRootAdmin = string.Equals(u.FindFirstValue("root"), "true", StringComparison.OrdinalIgnoreCase);
 
         // Permissions — encoded as a comma-separated list in the "perms" claim
         var permsRaw = u.FindFirstValue("perms");
@@ -58,6 +60,7 @@ public class CurrentUser : ICurrentUser
     public string? Email { get; }
     public bool IsAuthenticated { get; }
     public bool IsOwner { get; }
+    public bool IsRootAdmin { get; }
     public IReadOnlyCollection<string> Permissions { get; } = Array.Empty<string>();
 
     public bool HasRole(params string[] roles)

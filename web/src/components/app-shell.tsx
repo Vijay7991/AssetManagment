@@ -12,10 +12,10 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Boxes, ScanLine, Tag as TagIcon, FolderTree,
   Users, Settings, LogOut, Sun, Moon, Menu, X, ChevronDown, Activity,
-  Wrench, Bell, MapPin,
+  Wrench, Bell, MapPin, Shield,
 } from "lucide-react";
 
-const NAV = [
+const NAV: { label: string; href: string; icon: typeof LayoutDashboard; rootOnly?: boolean }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Assets", href: "/assets", icon: Boxes },
   { label: "Scan", href: "/scan", icon: ScanLine },
@@ -26,6 +26,8 @@ const NAV = [
   { label: "Asset Types", href: "/asset-types", icon: TagIcon },
   { label: "Members", href: "/members", icon: Users },
   { label: "Settings", href: "/settings", icon: Settings },
+  // Only visible to platform-level root admins — guarded both here and server-side.
+  { label: "Admin", href: "/admin", icon: Shield, rootOnly: true },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -64,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onSelect={async (id) => { await switchTenant(id); setSidebarOpen(false); }}
         />
         <nav className="flex flex-col gap-1 p-2">
-          {NAV.map(({ label, href, icon: Icon }) => {
+          {NAV.filter(item => !item.rootOnly || user.isRootAdmin).map(({ label, href, icon: Icon }) => {
             const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
             return (
               <Link key={href} href={href} onClick={() => setSidebarOpen(false)}

@@ -62,6 +62,7 @@ export type UserDto = {
   email: string;
   displayName: string;
   phone?: string;
+  isRootAdmin?: boolean;
 };
 
 export type TenantDto = {

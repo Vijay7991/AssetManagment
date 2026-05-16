@@ -21,6 +21,13 @@ Operational
 - **In-app notifications** with unread bell + email copy
 - **CSV import / export** — bulk-onboard from spreadsheets, export for reporting
 
+Accounts & access
+- **Self-service password reset** — `Forgot password?` on the login screen emails a 1-hour token
+- **Change your own password** from Settings (current password required)
+- **Tenant admins** can deactivate / reactivate members and trigger password resets per workspace
+- **Root admin** — a single platform-level operator (bootstrapped from `ROOT_ADMIN_EMAIL`) who can see every account on every workspace, activate/deactivate them, promote others to root, and force-reset passwords
+- Deactivating an account immediately revokes its refresh tokens — the user is signed out everywhere on the next refresh
+
 All running on your local network, no cloud, no paid services.
 
 ---
@@ -139,11 +146,33 @@ The QR payload is `https://<your-host>/t/<code>` so even a stock camera app open
 
 For MVP, three roles exist per tenant:
 
-- **Admin** — full control of tenant, can invite/remove users
+- **Admin** — full control of tenant, can invite/remove users, deactivate accounts, reset passwords
 - **Manager** — manage assets, categories, types
 - **Member** — view + scan + check-in/out (read mostly)
 
+On top of those, one platform-level **Root admin** can see and manage every account across every workspace. Set `ROOT_ADMIN_EMAIL` in `.env` to whichever account should hold that role — it's promoted automatically on signup or on the next API restart if the account already exists.
+
 Granular permissions and custom roles are Phase 2.
+
+### Setting up the root admin
+
+1. Put your email in `.env`:
+   ```
+   ROOT_ADMIN_EMAIL=you@example.com
+   ```
+2. Boot the stack — `docker compose up -d`
+3. Sign up at `https://localhost` with **that exact email**. You'll get the **Admin** sidebar entry automatically.
+4. If you already had an account before setting the env var, just restart the API (`docker compose restart api`) — it'll promote you on startup.
+
+Demote yourself with the "Demote" button on another root admin's row. The system refuses to leave you with zero root admins.
+
+### Password reset
+
+Self-service: hit **Forgot password?** on the login screen → check MailHog at `http://localhost:8025` for the reset link in development.
+
+Admin-initiated: from `/members` (workspace admin) or `/admin` (root admin), click **Reset password** on any user row. The link is emailed and also shown inline so you can copy it directly when MailHog isn't being watched.
+
+Reset tokens are single-use, expire in 1 hour, and revoke all active refresh tokens on success — sign-out everywhere.
 
 ---
 
@@ -164,25 +193,57 @@ docker compose logs -f api
 docker compose logs -f web
 ```
 
-### Backup the database
+### Backup and restore
+
+The repo ships with three helper scripts in `scripts/` (a `.sh` and a `.ps1` for each one, pick whichever matches your shell). They wrap the right `docker compose exec` invocations so you don't have to remember them.
+
+**Take a backup** — runs `pg_dump` inside the db container, writes a timestamped `.sql` file to `./backups/`. Read-only, safe to run while the app is up.
 
 ```bash
-docker compose exec db pg_dump -U assethub assethub > backup_$(date +%F).sql
+# Linux / macOS / WSL
+./scripts/backup.sh
+./scripts/backup.sh nightly     # adds the 'nightly' tag to the filename
+
+# Windows PowerShell
+.\scripts\backup.ps1
+.\scripts\backup.ps1 -Tag nightly
 ```
 
-### Restore
+**Restore a backup** — overwrites the current database with a dump. Prompts for confirmation (type `restore`) and stops the API for the duration of the load so writes don't race.
 
 ```bash
-docker compose exec -T db psql -U assethub assethub < backup_2026-05-09.sql
+# Linux / macOS / WSL
+./scripts/restore.sh ./backups/assethub_2026-05-16_14-30-00.sql
+./scripts/restore.sh ./backups/assethub_2026-05-16_14-30-00.sql --yes  # skip prompt
+
+# Windows PowerShell
+.\scripts\restore.ps1 .\backups\assethub_2026-05-16_14-30-00.sql
+.\scripts\restore.ps1 .\backups\assethub_2026-05-16_14-30-00.sql -Yes
 ```
+
+**Safe rebuild** — for the days where you've pulled a release that changes the schema and would otherwise need a destructive `down -v`. The wrapper backs up automatically, then wipes, rebuilds, and brings the stack back up. Restore your data with `restore.sh` after.
+
+```bash
+# Linux / macOS / WSL
+./scripts/safe-rebuild.sh
+
+# Windows PowerShell
+.\scripts\safe-rebuild.ps1
+```
+
+Backups live in `./backups/` and are gitignored — they contain user PII and password hashes, never commit them.
 
 ### Update the app
 
 ```bash
 git pull
-docker compose build
-docker compose up -d
-# Schema migrations are auto-applied on startup
+
+# If the release notes say "schema changed", use safe-rebuild — it backs up first.
+./scripts/safe-rebuild.sh          # bash
+# .\scripts\safe-rebuild.ps1       # PowerShell
+
+# Otherwise (code changes only, no schema diff), a normal rebuild preserves data:
+docker compose up -d --build
 ```
 
 ---
@@ -243,14 +304,30 @@ Everything in one Docker network. No external calls. Works offline once the imag
 
 The API uses `EnsureCreatedAsync` to provision the schema on first run. It does NOT
 migrate an existing database when entities change. If you pull a new version that
-adds tables/columns, reset the local DB:
+adds tables/columns, you need to reset the local DB — use `safe-rebuild` so your
+existing data ends up in a backup file you can restore later:
 
 ```bash
-docker compose down -v   # WIPES DATA
-docker compose up -d
+./scripts/safe-rebuild.sh           # bash    — auto-backs-up, then down -v + up
+# .\scripts\safe-rebuild.ps1        # PowerShell
+
+# Then, if you want the old data back AGAINST THE NEW SCHEMA, restore:
+./scripts/restore.sh ./backups/assethub_pre-rebuild_<timestamp>.sql
 ```
 
-Switch to proper EF Core migrations before going to production with real data.
+The restore step only works if the table shapes happen to be compatible. When the
+release added or renamed columns the dump's `INSERT`s will fail on the missing
+columns — at that point you're better off keeping the dump for reference and
+re-entering or re-importing your data.
+
+> **Upgrading to the accounts release?** This version adds three new columns to
+> `Users` (`IsActive`, `IsRootAdmin`, `DeactivatedAt`) and a new
+> `PasswordResetTokens` table. The shape is additive so an old dump can usually
+> be restored cleanly into the new schema — the new columns just take their
+> defaults (active=true, root=false).
+
+Switch to proper EF Core migrations before going to production with real data —
+that path applies schema diffs incrementally and doesn't need this dance at all.
 
 ---
 

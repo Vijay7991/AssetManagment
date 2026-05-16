@@ -22,6 +22,11 @@ public interface IJwtTokenService
         User user, Guid tenantId, string role, IEnumerable<string> permissions, bool isOwner);
     (string PlainToken, string TokenHash, DateTimeOffset ExpiresAt) IssueRefreshToken();
     string HashToken(string plain);
+
+    /// One-time password-reset tokens use the same hashing strategy as refresh
+    /// tokens but live in their own table. Returns a URL-safe plain token (sent
+    /// in the email) and the hash (stored in DB).
+    (string PlainToken, string TokenHash, DateTimeOffset ExpiresAt) IssuePasswordResetToken();
 }
 
 public class JwtTokenService : IJwtTokenService
@@ -45,6 +50,7 @@ public class JwtTokenService : IJwtTokenService
             new("tid", tenantId.ToString()),
             new("perms", permsCsv),
             new("owner", isOwner ? "true" : "false"),
+            new("root", user.IsRootAdmin ? "true" : "false"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
@@ -71,6 +77,19 @@ public class JwtTokenService : IJwtTokenService
         var plain = Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
         var hash = HashToken(plain);
         var expires = DateTimeOffset.UtcNow.AddDays(_opts.RefreshTtlDays);
+        return (plain, hash, expires);
+    }
+
+    public (string, string, DateTimeOffset) IssuePasswordResetToken()
+    {
+        // 24 random bytes → 32-char base64url string. Short enough to fit a URL,
+        // long enough that brute-forcing within 1h is wildly impractical.
+        var bytes = RandomNumberGenerator.GetBytes(24);
+        var plain = Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        var hash = HashToken(plain);
+        // 1-hour expiry — long enough the user can read the email and click, short
+        // enough that a stolen mailbox snapshot from yesterday is worthless.
+        var expires = DateTimeOffset.UtcNow.AddHours(1);
         return (plain, hash, expires);
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth, useCan } from "@/lib/auth-context";
 import { api, PERMISSIONS } from "@/lib/api";
@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/card";
-import { Copy, Crown, Mail, MessageCircle, Shield, UserPlus, Users, X } from "lucide-react";
-import { relativeTime } from "@/lib/utils";
+import { Copy, Crown, KeyRound, Mail, MessageCircle, Power, PowerOff, Shield, UserPlus, Users, X } from "lucide-react";
+import { cn, relativeTime } from "@/lib/utils";
 
 type Member = {
   userId: string;
@@ -17,10 +17,13 @@ type Member = {
   displayName: string;
   role: string;
   isOwner: boolean;
+  isActive: boolean;
   permissions: string[];
   extraPermissions: string[];
   joinedAt: string;
 };
+
+type AdminResetResponse = { resetLink: string; expiresAt: string };
 type Invite = {
   id: string;
   email: string;
@@ -32,15 +35,37 @@ type Invite = {
   whatsAppLink: string | null;
 };
 
+type MailHealth = { enabled: boolean; lastChecked: string; reason: string | null };
+
 export default function MembersPage() {
   const { accessToken, activeTenant, user } = useAuth();
   const canManage = useCan("members:write");
   const qc = useQueryClient();
+  // Channel defaults to WhatsApp only if mail is down — initial render uses
+  // Email and we flip it once the probe answers.
   const [form, setForm] = useState({ email: "", role: "Member", phone: "", channel: "Email" });
   const [err, setErr] = useState<string | null>(null);
   const [lastInvite, setLastInvite] = useState<Invite | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [permsFor, setPermsFor] = useState<Member | null>(null);
+
+  // The mail probe is public, but we still pass the token so the standard
+  // request helper doesn't trip on the credentials/CORS combo.
+  const mailHealth = useQuery({
+    queryKey: ["mail-health"],
+    queryFn: () => api.get<MailHealth>("/health/mail", accessToken),
+    enabled: !!accessToken && canManage,
+    refetchInterval: 60_000,
+  });
+  const emailAvailable = mailHealth.data?.enabled !== false;  // assume yes until proven no
+
+  // If the probe comes back negative and the form is still on Email, pivot to
+  // WhatsApp so the admin doesn't try to send an invite that'll be rejected.
+  useEffect(() => {
+    if (mailHealth.data && !mailHealth.data.enabled) {
+      setForm(f => f.channel === "Email" ? { ...f, channel: "WhatsApp" } : f);
+    }
+  }, [mailHealth.data]);
 
   const members = useQuery({
     queryKey: ["members"],
@@ -85,6 +110,24 @@ export default function MembersPage() {
     onError: (e: any) => setErr(e?.message || "Could not change role."),
   });
 
+  const setActive = useMutation({
+    mutationFn: ({ userId, isActive }: { userId: string; isActive: boolean }) =>
+      api.put(`/tenant/members/${userId}/active`, { isActive }, accessToken),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["members"] }),
+    onError: (e: any) => setErr(e?.message || "Could not update account status."),
+  });
+
+  const [resetLink, setResetLink] = useState<{ email: string; link: string } | null>(null);
+  const resetPassword = useMutation({
+    mutationFn: ({ userId }: { userId: string; email: string }) =>
+      api.post<AdminResetResponse>(`/tenant/members/${userId}/reset-password`, {}, accessToken),
+    onSuccess: (data, vars) => {
+      setResetLink({ email: vars.email, link: data.resetLink });
+      setErr(null);
+    },
+    onError: (e: any) => setErr(e?.message || "Could not send reset link."),
+  });
+
   function copy(text: string, key: string) {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(key);
@@ -115,18 +158,26 @@ export default function MembersPage() {
                   return (
                     <li key={m.userId} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                        <div className={cn(
+                          "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold",
+                          m.isActive
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        )}>
                           {(m.displayName || m.email).slice(0, 1).toUpperCase()}
                         </div>
                         <div>
                           <div className="font-medium flex items-center gap-1.5">
-                            {m.displayName}
+                            <span className={cn(!m.isActive && "text-muted-foreground line-through")}>
+                              {m.displayName}
+                            </span>
                             {m.isOwner && (
                               <Badge variant="warning" className="gap-1">
                                 <Crown className="h-3 w-3" /> Owner
                               </Badge>
                             )}
                             {isSelf && <Badge variant="outline">You</Badge>}
+                            {!m.isActive && <Badge variant="destructive">Deactivated</Badge>}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {m.email} · joined {relativeTime(m.joinedAt)}
@@ -140,10 +191,10 @@ export default function MembersPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {canManage && !m.isOwner ? (
                           <Select value={m.role} onChange={e => updateRole.mutate({ userId: m.userId, role: e.target.value })}
-                                  className="w-32">
+                                  className="w-32" disabled={!m.isActive}>
                             <option value="Member">Member</option>
                             <option value="Manager">Manager</option>
                             <option value="Admin">Admin</option>
@@ -155,6 +206,33 @@ export default function MembersPage() {
                           <Button size="sm" variant="outline" onClick={() => setPermsFor(m)}>
                             <Shield className="mr-1 h-3 w-3" /> Permissions
                           </Button>
+                        )}
+                        {canManage && !isSelf && (
+                          <Button size="sm" variant="outline"
+                                  onClick={() => resetPassword.mutate({ userId: m.userId, email: m.email })}
+                                  disabled={resetPassword.isPending}
+                                  title="Email a password reset link">
+                            <KeyRound className="mr-1 h-3 w-3" /> Reset password
+                          </Button>
+                        )}
+                        {canManage && !isSelf && !m.isOwner && (
+                          m.isActive ? (
+                            <Button size="sm" variant="outline"
+                                    onClick={() => {
+                                      if (confirm(`Deactivate ${m.displayName}? They will be signed out immediately.`)) {
+                                        setActive.mutate({ userId: m.userId, isActive: false });
+                                      }
+                                    }}
+                                    title="Deactivate account">
+                              <PowerOff className="mr-1 h-3 w-3" /> Deactivate
+                            </Button>
+                          ) : (
+                            <Button size="sm"
+                                    onClick={() => setActive.mutate({ userId: m.userId, isActive: true })}
+                                    title="Reactivate account">
+                              <Power className="mr-1 h-3 w-3" /> Activate
+                            </Button>
+                          )
                         )}
                         {canManage && !isSelf && !m.isOwner && (
                           <Button size="icon" variant="ghost"
@@ -193,18 +271,32 @@ export default function MembersPage() {
               }} className="space-y-3">
                 <div className="space-y-2">
                   <Label>Channel</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button type="button" size="sm"
-                      variant={form.channel === "Email" ? "default" : "outline"}
-                      onClick={() => setForm(f => ({ ...f, channel: "Email" }))}>
-                      <Mail className="mr-2 h-4 w-4" /> Email
-                    </Button>
-                    <Button type="button" size="sm"
-                      variant={form.channel === "WhatsApp" ? "default" : "outline"}
-                      onClick={() => setForm(f => ({ ...f, channel: "WhatsApp" }))}>
-                      <MessageCircle className="mr-2 h-4 w-4" /> WhatsApp
-                    </Button>
-                  </div>
+                  {emailAvailable ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" size="sm"
+                        variant={form.channel === "Email" ? "default" : "outline"}
+                        onClick={() => setForm(f => ({ ...f, channel: "Email" }))}>
+                        <Mail className="mr-2 h-4 w-4" /> Email
+                      </Button>
+                      <Button type="button" size="sm"
+                        variant={form.channel === "WhatsApp" ? "default" : "outline"}
+                        onClick={() => setForm(f => ({ ...f, channel: "WhatsApp" }))}>
+                        <MessageCircle className="mr-2 h-4 w-4" /> WhatsApp
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 gap-2">
+                        <Button type="button" size="sm" variant="default">
+                          <MessageCircle className="mr-2 h-4 w-4" /> WhatsApp
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Email delivery isn't reachable from the server right now —
+                        invites can only be sent via WhatsApp.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -310,6 +402,34 @@ export default function MembersPage() {
           onClose={() => setPermsFor(null)}
           onSaved={() => { setPermsFor(null); qc.invalidateQueries({ queryKey: ["members"] }); }}
         />
+      )}
+
+      {resetLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+             onClick={() => setResetLink(null)}>
+          <Card className="w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Reset link created</CardTitle>
+              <Button variant="ghost" size="icon" onClick={() => setResetLink(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                We emailed a reset link to <b className="text-foreground">{resetLink.email}</b>.
+                You can also share the link directly — it expires in 1 hour and is single-use.
+              </p>
+              <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 p-2">
+                <span className="truncate font-mono text-xs">{resetLink.link}</span>
+                <Button size="sm" variant="outline"
+                        onClick={() => copy(resetLink.link, "reset-link")}>
+                  <Copy className="mr-1 h-3 w-3" />
+                  {copied === "reset-link" ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

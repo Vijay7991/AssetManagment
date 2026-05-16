@@ -1,11 +1,37 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input, Label } from "@/components/ui/input";
+import { CheckCircle2 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { user, activeTenant, logout } = useAuth();
+  const { user, activeTenant, accessToken, logout } = useAuth();
+  const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwErr, setPwErr] = useState<string | null>(null);
+  const [pwOk, setPwOk] = useState(false);
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwErr(null); setPwOk(false);
+    if (pw.next.length < 8) { setPwErr("New password must be at least 8 characters."); return; }
+    if (pw.next !== pw.confirm) { setPwErr("New passwords don't match."); return; }
+    setPwBusy(true);
+    try {
+      await api.post("/auth/change-password",
+        { currentPassword: pw.current, newPassword: pw.next }, accessToken);
+      setPw({ current: "", next: "", confirm: "" });
+      setPwOk(true);
+    } catch (e: any) {
+      setPwErr(e?.message || "Could not change password.");
+    } finally {
+      setPwBusy(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -23,6 +49,46 @@ export default function SettingsPage() {
           <Row label="Name">{user?.displayName}</Row>
           <Row label="Email">{user?.email}</Row>
           <Row label="Phone">{user?.phone || "—"}</Row>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Change password</CardTitle>
+          <CardDescription>Update the password used to sign in to AssetHub.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={changePassword} className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="cpw">Current password</Label>
+              <Input id="cpw" type="password" required value={pw.current}
+                     onChange={e => setPw(s => ({ ...s, current: e.target.value }))}
+                     autoComplete="current-password" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="npw">New password</Label>
+              <Input id="npw" type="password" required minLength={8} value={pw.next}
+                     onChange={e => setPw(s => ({ ...s, next: e.target.value }))}
+                     autoComplete="new-password" />
+              <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="npw2">Confirm new password</Label>
+              <Input id="npw2" type="password" required minLength={8} value={pw.confirm}
+                     onChange={e => setPw(s => ({ ...s, confirm: e.target.value }))}
+                     autoComplete="new-password" />
+            </div>
+            {pwErr && <p className="text-sm text-destructive">{pwErr}</p>}
+            {pwOk && (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <span>Password updated.</span>
+              </div>
+            )}
+            <Button type="submit" disabled={pwBusy}>
+              {pwBusy ? "Saving…" : "Update password"}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 

@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<TenantMembership> Memberships => Set<TenantMembership>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<TenantInvite> Invites => Set<TenantInvite>();
     public DbSet<AssetCategory> Categories => Set<AssetCategory>();
     public DbSet<AssetType> AssetTypes => Set<AssetType>();
@@ -36,6 +37,8 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(u => u.Email).IsUnique();
             e.HasIndex(u => u.Phone);
+            e.HasIndex(u => u.IsRootAdmin);
+            e.HasIndex(u => u.IsActive);
         });
 
         // ── TenantMembership ──────────────────────────────────────
@@ -53,6 +56,15 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(r => r.TokenHash).IsUnique();
             e.HasIndex(r => r.UserId);
+        });
+
+        // ── PasswordResetToken ────────────────────────────────────
+        b.Entity<PasswordResetToken>(e =>
+        {
+            e.HasIndex(p => p.TokenHash).IsUnique();
+            e.HasIndex(p => p.UserId);
+            e.HasOne(p => p.User).WithMany(u => u.PasswordResets)
+                .HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── Invite ────────────────────────────────────────────────

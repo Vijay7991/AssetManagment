@@ -20,3 +20,8 @@ obj/
 # Data (local volumes)
 data/
 *.log
+
+# Backups produced by scripts/backup.{sh,ps1} — never commit dumps, they
+# contain user PII and password hashes.
+backups/
+*.sql.gz
