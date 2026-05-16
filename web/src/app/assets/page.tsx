@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth, useCan } from "@/lib/auth-context";
-import { api, AssetListItem, ImportResult, Location, Paged } from "@/lib/api";
+import { api, AssetListItem, BASE, ImportResult, Location, Paged } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -20,10 +20,20 @@ export default function AssetsPage() {
   const canWrite = useCan("assets:write");
   const canImport = useCan("import:write");
   const qc = useQueryClient();
+  const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [locationId, setLocationId] = useState("");
   const [page, setPage] = useState(1);
+
+  // Debounce the search box so we don't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(qInput);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [qInput]);
 
   const locations = useQuery({
     queryKey: ["locations"],
@@ -44,7 +54,7 @@ export default function AssetsPage() {
 
   function downloadExport() {
     // Browser navigation triggers download; pass token via fetch + blob to keep auth
-    fetch((process.env.NEXT_PUBLIC_API_BASE_URL || "/api") + "/assets/export.csv", {
+    fetch(`${BASE}/assets/export.csv`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then(r => r.blob())
@@ -159,8 +169,8 @@ export default function AssetsPage() {
           <Input
             placeholder="Search assets…"
             className="pl-9"
-            value={q}
-            onChange={e => { setQ(e.target.value); setPage(1); }}
+            value={qInput}
+            onChange={e => setQInput(e.target.value)}
           />
         </div>
         <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="w-44">
@@ -171,7 +181,41 @@ export default function AssetsPage() {
 
       <Card>
         <CardContent className="p-0">
-          {list.isLoading && <p className="p-6 text-sm text-muted-foreground">Loading…</p>}
+          {list.isLoading && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Asset</th>
+                    <th className="px-4 py-3 font-medium">Type</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Qty</th>
+                    <th className="px-4 py-3 font-medium">Location</th>
+                    <th className="px-4 py-3 font-medium">Tag</th>
+                    <th className="px-4 py-3 font-medium">Added</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-9 w-9 shrink-0 rounded bg-muted" />
+                          <div className="h-3 w-40 rounded bg-muted" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3"><div className="h-3 w-20 rounded bg-muted" /></td>
+                      <td className="px-4 py-3"><div className="h-5 w-16 rounded-full bg-muted" /></td>
+                      <td className="px-4 py-3"><div className="h-3 w-6 rounded bg-muted" /></td>
+                      <td className="px-4 py-3"><div className="h-3 w-28 rounded bg-muted" /></td>
+                      <td className="px-4 py-3"><div className="h-3 w-16 rounded bg-muted" /></td>
+                      <td className="px-4 py-3"><div className="h-3 w-14 rounded bg-muted" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {list.data && list.data.items.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <Boxes className="h-10 w-10 text-muted-foreground" />
