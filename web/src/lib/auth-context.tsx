@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, AuthResponse, TenantDto, UserDto } from "./api";
+import { api, AuthResponse, setRefreshCallback, TenantDto, UserDto } from "./api";
 
 type AuthState = {
   user: UserDto | null;
@@ -17,7 +17,7 @@ type AuthContextValue = AuthState & {
   signup: (req: { email: string; password: string; displayName: string; workspaceName?: string }) => Promise<void>;
   logout: () => Promise<void>;
   switchTenant: (tenantId: string) => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<string | null>;
 };
 
 const STORAGE_KEY = "assethub.auth.v1";
@@ -92,20 +92,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.refresh();
   }, [apply, router]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<string | null> => {
     const stored = load();
     if (!stored?.refreshToken) {
       setState(s => ({ ...s, loading: false }));
-      return;
+      return null;
     }
     try {
       const res = await api.post<AuthResponse>("/auth/refresh", { refreshToken: stored.refreshToken });
       apply(res);
+      return res.accessToken;
     } catch {
       persist(null);
       setState({ user: null, activeTenant: null, tenants: [], accessToken: null, loading: false });
+      return null;
     }
   }, [apply]);
+
+  // Expose `refresh` to the API client so any 401 response triggers a single
+  // refresh + retry without each caller having to handle re-auth manually.
+  useEffect(() => {
+    setRefreshCallback(refresh);
+    return () => setRefreshCallback(null);
+  }, [refresh]);
 
   // Hydrate on mount
   useEffect(() => {

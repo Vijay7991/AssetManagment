@@ -52,7 +52,7 @@ export default function ActivityPage() {
           )}
           {list.data && list.data.items.length > 0 && (
             <ul className="divide-y">
-              {list.data.items.map(e => (
+              {list.data.items.map((e: AuditEvent) => (
                 <li key={e.id} className="flex items-start gap-3 px-4 py-3 text-sm">
                   <Badge variant={VERB_TONE[e.verb] || "secondary"}>{e.verb}</Badge>
                   <div className="flex-1 min-w-0">

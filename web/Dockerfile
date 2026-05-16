@@ -1,7 +1,7 @@
 # ── Deps ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY web/package.json web/package-lock.json* ./
 RUN npm install --legacy-peer-deps
 
 # ── Build ─────────────────────────────────────────────────────────
@@ -10,7 +10,8 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_BASE_URL=/api
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY web/ .
+COPY shared/ /shared/
 RUN npm run build
 
 # ── Runtime ───────────────────────────────────────────────────────

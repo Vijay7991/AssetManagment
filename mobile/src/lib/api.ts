@@ -2,25 +2,63 @@ import { getServerUrl } from "./server";
 
 export type ApiError = { status: number; message: string };
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {},
-  opts: { auth?: string | null; raw?: boolean } = {}
-): Promise<T> {
-  const base = await getServerUrl();
-  if (!base) throw { status: 0, message: "Server URL not set" } satisfies ApiError;
+// ── Token-refresh hook ────────────────────────────────────────────────
+// AuthProvider registers a callback that performs a /auth/refresh round-trip
+// and resolves to the freshly-issued access token (or null on failure). The
+// request helper invokes it once per 401 to transparently recover from
+// expired access tokens.
+type RefreshCallback = () => Promise<string | null>;
+let refreshCallback: RefreshCallback | null = null;
+let inflightRefresh: Promise<string | null> | null = null;
 
+export function setRefreshCallback(fn: RefreshCallback | null) {
+  refreshCallback = fn;
+}
+
+function refreshOnce(): Promise<string | null> {
+  if (!refreshCallback) return Promise.resolve(null);
+  inflightRefresh ??= refreshCallback().finally(() => { inflightRefresh = null; });
+  return inflightRefresh;
+}
+
+async function doFetch(base: string, path: string, init: RequestInit, auth: string | null | undefined): Promise<Response> {
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (opts.auth) headers.set("Authorization", `Bearer ${opts.auth}`);
+  if (auth) headers.set("Authorization", `Bearer ${auth}`);
+  return fetch(`${base}${path}`, { ...init, headers });
+}
+
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  opts: { auth?: string | null; raw?: boolean; skipRefresh?: boolean } = {}
+): Promise<T> {
+  const base = await getServerUrl();
+  if (!base) throw { status: 0, message: "Server URL not set" } satisfies ApiError;
 
   let res: Response;
   try {
-    res = await fetch(`${base}${path}`, { ...init, headers });
-  } catch (e: any) {
-    throw { status: 0, message: e?.message || "Network error" } satisfies ApiError;
+    res = await doFetch(base, path, init, opts.auth);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Network error";
+    throw { status: 0, message } satisfies ApiError;
+  }
+
+  // Transparent refresh-and-retry on 401, except for the refresh endpoint
+  // itself (otherwise an expired refresh token would deadlock).
+  const isRefreshCall = path.startsWith("/api/auth/refresh");
+  if (res.status === 401 && !opts.skipRefresh && !isRefreshCall && refreshCallback) {
+    const newToken = await refreshOnce();
+    if (newToken) {
+      try {
+        res = await doFetch(base, path, init, newToken);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Network error";
+        throw { status: 0, message } satisfies ApiError;
+      }
+    }
   }
 
   if (!res.ok) {
@@ -54,99 +92,22 @@ export async function buildPhotoUrl(photoId: string): Promise<string> {
   return `${base}/api/files/photos/${photoId}`;
 }
 
-// ── DTOs (must match the .NET API) ────────────────────────────────
+// ── DTOs ─────────────────────────────────────────────────────────────
+// Canonical definitions live in `/shared/dto.ts` so the web and mobile
+// clients can't drift. Re-exported here as types so existing imports of
+// the form `import { AssetDetail } from "@/lib/api"` keep working.
 
-export type UserDto = { id: string; email: string; displayName: string; phone?: string };
-
-export type TenantDto = {
-  id: string;
-  name: string;
-  slug: string;
-  role: "Admin" | "Manager" | "Member";
-  plan: string;
-  isOwner: boolean;
-  permissions: string[];
-};
-
-export type AuthResponse = {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;
-  user: UserDto;
-  activeTenant: TenantDto;
-  tenants: TenantDto[];
-};
-
-export type AssetListItem = {
-  id: string;
-  name: string;
-  assetType: string;
-  status: string;
-  quantity: number;
-  locationId: string | null;
-  locationName: string | null;
-  locationDetail: string | null;
-  coverPhotoUrl: string | null;
-  primaryTagCode: string | null;
-  createdAt: string;
-};
-
-export type Tag = {
-  id: string;
-  code: string;
-  format: string;
-  status: string;
-  createdAt: string;
-  qrUrl: string;
-};
-
-export type Photo = {
-  id: string;
-  url: string;
-  isCover: boolean;
-  sizeBytes: number;
-};
-
-export type AssetDetail = {
-  id: string;
-  name: string;
-  description: string | null;
-  locationId: string | null;
-  locationName: string | null;
-  locationDetail: string | null;
-  quantity: number;
-  status: string;
-  assetTypeId: string;
-  assetTypeName: string;
-  categoryId: string;
-  categoryName: string;
-  fieldValues: Record<string, unknown> | null;
-  purchasePrice: number | null;
-  purchasedOn: string | null;
-  warrantyUntil: string | null;
-  assignedToUserId: string | null;
-  assignedToName: string | null;
-  tags: Tag[];
-  photos: Photo[];
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type Movement = {
-  id: string;
-  kind: "CheckOut" | "CheckIn" | "Move";
-  fromLocation: string | null;
-  toLocation: string | null;
-  fromUserName: string | null;
-  toUserName: string | null;
-  notes: string | null;
-  performedByName: string | null;
-  performedAt: string;
-};
-
-export type Paged<T> = {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
+export type {
+  UserDto,
+  TenantDto,
+  TenantRole,
+  AuthResponse,
+  Paged,
+  AssetStatus,
+  AssetListItem,
+  Tag,
+  Photo,
+  AssetDetail,
+  MovementKind,
+  Movement,
+} from "@shared/dto";

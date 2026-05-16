@@ -3,26 +3,58 @@
  * Refresh-token rotation happens via /api/auth/refresh — see auth.ts.
  */
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
+export const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
 export type ApiError = { status: number; message: string };
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {},
-  opts: { auth?: string | null; raw?: boolean } = {}
-): Promise<T> {
+// ── Token-refresh hook ────────────────────────────────────────────────
+// AuthProvider registers a callback that performs a /auth/refresh round-trip
+// and resolves to the freshly-issued access token (or null on failure). The
+// request helper invokes it once per 401 to transparently recover from
+// expired access tokens, then retries the original call exactly once.
+type RefreshCallback = () => Promise<string | null>;
+let refreshCallback: RefreshCallback | null = null;
+let inflightRefresh: Promise<string | null> | null = null;
+
+export function setRefreshCallback(fn: RefreshCallback | null) {
+  refreshCallback = fn;
+}
+
+function refreshOnce(): Promise<string | null> {
+  if (!refreshCallback) return Promise.resolve(null);
+  // Coalesce parallel 401s so a burst of failed requests triggers a single
+  // refresh call rather than racing to rotate the refresh token N times.
+  inflightRefresh ??= refreshCallback().finally(() => { inflightRefresh = null; });
+  return inflightRefresh;
+}
+
+async function doFetch(path: string, init: RequestInit, auth: string | null | undefined): Promise<Response> {
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (opts.auth) headers.set("Authorization", `Bearer ${opts.auth}`);
+  if (auth) headers.set("Authorization", `Bearer ${auth}`);
+  return fetch(`${BASE}${path}`, { ...init, headers, credentials: "include" });
+}
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers,
-    credentials: "include",
-  });
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  opts: { auth?: string | null; raw?: boolean; skipRefresh?: boolean } = {}
+): Promise<T> {
+  let res = await doFetch(path, init, opts.auth);
+
+  // If the access token has expired mid-session, ask AuthProvider to refresh,
+  // then retry the original request once with the freshly-issued token. Skip
+  // for the refresh endpoint itself — otherwise an expired refresh token would
+  // deadlock (refresh awaits itself).
+  const isRefreshCall = path.startsWith("/auth/refresh");
+  if (res.status === 401 && !opts.skipRefresh && !isRefreshCall && refreshCallback) {
+    const newToken = await refreshOnce();
+    if (newToken) {
+      res = await doFetch(path, init, newToken);
+    }
+  }
 
   if (!res.ok) {
     let message = res.statusText;
@@ -55,25 +87,38 @@ export const api = {
   },
 };
 
-// ── Types matching the API DTOs ──────────────────────────────────────
+// ── DTOs ─────────────────────────────────────────────────────────────
+// Canonical definitions live in `/shared/dto.ts` so the web and mobile
+// clients can't drift. Re-exported here as types so existing imports of
+// the form `import { AssetDetail } from "@/lib/api"` keep working.
 
-export type UserDto = {
-  id: string;
-  email: string;
-  displayName: string;
-  phone?: string;
-  isRootAdmin?: boolean;
-};
+export type {
+  UserDto,
+  TenantDto,
+  TenantRole,
+  AuthResponse,
+  Paged,
+  Category,
+  AssetTypeRecord,
+  FieldSchemaItem,
+  Location,
+  AssetStatus,
+  AssetListItem,
+  Tag,
+  Photo,
+  AssetDetail,
+  MovementKind,
+  Movement,
+  AuditEvent,
+  MaintenanceKind,
+  MaintenanceStatus,
+  MaintenancePriority,
+  MaintenanceTicket,
+  Notification,
+  ImportResult,
+} from "@shared/dto";
 
-export type TenantDto = {
-  id: string;
-  name: string;
-  slug: string;
-  role: "Admin" | "Manager" | "Member";
-  plan: string;
-  isOwner: boolean;
-  permissions: string[];
-};
+// ── Web-only runtime values ──────────────────────────────────────────
 
 export const PERMISSIONS = [
   { key: "assets:write", label: "Create / edit / delete assets" },
@@ -83,169 +128,3 @@ export const PERMISSIONS = [
   { key: "import:write", label: "Bulk-import assets via CSV" },
   { key: "members:write", label: "Invite and manage workspace members" },
 ] as const;
-
-export type Location = {
-  id: string;
-  name: string;
-  code: string | null;
-  city: string | null;
-  region: string | null;
-  country: string | null;
-  address: string | null;
-  isActive: boolean;
-  assetCount: number;
-};
-
-export type AuthResponse = {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;
-  user: UserDto;
-  activeTenant: TenantDto;
-  tenants: TenantDto[];
-};
-
-export type Category = {
-  id: string;
-  parentId: string | null;
-  name: string;
-  icon?: string;
-  color?: string;
-};
-
-export type AssetTypeRecord = {
-  id: string;
-  categoryId: string;
-  name: string;
-  icon?: string;
-  fieldSchema?: FieldSchemaItem[];
-};
-
-export type FieldSchemaItem = {
-  key: string;
-  label: string;
-  type: "string" | "number" | "boolean" | "date" | "select";
-  required?: boolean;
-  options?: string[];
-};
-
-export type AssetListItem = {
-  id: string;
-  name: string;
-  assetType: string;
-  status: string;
-  quantity: number;
-  locationId: string | null;
-  locationName: string | null;
-  locationDetail: string | null;
-  coverPhotoUrl: string | null;
-  primaryTagCode: string | null;
-  createdAt: string;
-};
-
-export type Tag = {
-  id: string;
-  code: string;
-  format: string;
-  status: string;
-  createdAt: string;
-  qrUrl: string;
-};
-
-export type Photo = {
-  id: string;
-  url: string;
-  isCover: boolean;
-  sizeBytes: number;
-};
-
-export type AssetDetail = {
-  id: string;
-  name: string;
-  description: string | null;
-  locationId: string | null;
-  locationName: string | null;
-  locationDetail: string | null;
-  quantity: number;
-  status: string;
-  assetTypeId: string;
-  assetTypeName: string;
-  categoryId: string;
-  categoryName: string;
-  fieldValues: Record<string, unknown> | null;
-  purchasePrice: number | null;
-  purchasedOn: string | null;
-  warrantyUntil: string | null;
-  assignedToUserId: string | null;
-  assignedToName: string | null;
-  tags: Tag[];
-  photos: Photo[];
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type Paged<T> = {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
-
-// ── Phase 2 types ────────────────────────────────────────────────────
-
-export type Movement = {
-  id: string;
-  kind: "CheckOut" | "CheckIn" | "Move";
-  fromLocation: string | null;
-  toLocation: string | null;
-  fromUserId: string | null;
-  fromUserName: string | null;
-  toUserId: string | null;
-  toUserName: string | null;
-  notes: string | null;
-  performedByName: string | null;
-  performedAt: string;
-};
-
-export type AuditEvent = {
-  id: string;
-  verb: string;
-  entityType: string;
-  entityId: string | null;
-  summary: string;
-  actorEmail: string | null;
-  at: string;
-};
-
-export type MaintenanceTicket = {
-  id: string;
-  assetId: string;
-  assetName: string;
-  title: string;
-  description: string | null;
-  kind: "Preventive" | "Corrective" | "Inspection";
-  status: "Open" | "InProgress" | "Done" | "Cancelled";
-  priority: "Low" | "Medium" | "High" | "Critical";
-  assignedToUserId: string | null;
-  assignedToName: string | null;
-  scheduledFor: string | null;
-  completedAt: string | null;
-  cost: number | null;
-  createdAt: string;
-};
-
-export type Notification = {
-  id: string;
-  kind: string;
-  title: string;
-  body: string | null;
-  link: string | null;
-  createdAt: string;
-  readAt: string | null;
-};
-
-export type ImportResult = {
-  imported: number;
-  skipped: number;
-  errors: string[];
-};

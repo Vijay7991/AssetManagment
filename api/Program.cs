@@ -167,19 +167,41 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// Auto-create the database schema on startup. For a real production migration
-// strategy, switch to `dotnet ef database update` and remove this block.
+// Bring the database schema up to date on startup.
+//
+//   * Development: `EnsureCreatedAsync` is kept as the default so a fresh `docker
+//     compose up` still works without any EF tooling on the host. This skips the
+//     migration history table — it's a dev convenience only.
+//
+//   * Non-Development (Staging/Production): `MigrateAsync` is used so every
+//     deployment applies pending migrations exactly once and the schema is
+//     reproducible. Generate the initial migration with:
+//
+//         cd api && dotnet ef migrations add InitialCreate -o Migrations
+//
+//     and commit the `Migrations/` folder. After that, every schema change is
+//     `dotnet ef migrations add <Name>` + a redeploy.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var log = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var useMigrations = !app.Environment.IsDevelopment();
+
     var attempts = 0;
     while (true)
     {
         try
         {
-            await db.Database.EnsureCreatedAsync();
-            log.LogInformation("Database schema verified.");
+            if (useMigrations)
+            {
+                await db.Database.MigrateAsync();
+                log.LogInformation("Database migrations applied.");
+            }
+            else
+            {
+                await db.Database.EnsureCreatedAsync();
+                log.LogInformation("Database schema verified (EnsureCreated, dev mode).");
+            }
             break;
         }
         catch (Exception ex) when (attempts++ < 10)

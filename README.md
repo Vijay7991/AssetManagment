@@ -329,6 +329,34 @@ re-entering or re-importing your data.
 Switch to proper EF Core migrations before going to production with real data —
 that path applies schema diffs incrementally and doesn't need this dance at all.
 
+### Switching on EF Core migrations
+
+The infrastructure is in place — `AppDbContextFactory.cs` is the design-time
+factory the EF tools need, and `Program.cs` already calls `MigrateAsync()` in any
+non-Development environment (`ASPNETCORE_ENVIRONMENT=Staging` or `Production`).
+All that's missing is the migration files themselves. To generate them:
+
+```bash
+# One-time, on a developer machine with the .NET 9 SDK installed:
+dotnet tool install --global dotnet-ef           # if not already installed
+cd api
+dotnet ef migrations add InitialCreate -o Migrations
+# Commit the Migrations/ folder.
+```
+
+After that, every schema change is:
+
+```bash
+cd api
+dotnet ef migrations add <DescriptiveName>
+# Commit, deploy. `MigrateAsync()` will apply it on next API startup.
+```
+
+If you already have a database that was created by `EnsureCreatedAsync` (which
+skips the `__EFMigrationsHistory` table), you need to baseline it once before
+switching to migrations — either drop and recreate the database, or follow EF's
+[existing-database baseline guide](https://learn.microsoft.com/ef/core/managing-schemas/migrations/projects#existing-database).
+
 ---
 
 ## Project layout
