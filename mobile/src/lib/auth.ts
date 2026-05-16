@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api, AuthResponse, TenantDto, UserDto } from "./api";
+import { api, AuthResponse, setRefreshCallback, TenantDto, UserDto } from "./api";
 
 const KEY = "assethub.auth.v1";
 
@@ -17,7 +17,7 @@ type Ctx = State & {
   signup: (req: { email: string; password: string; displayName: string; workspaceName?: string }) => Promise<void>;
   logout: () => Promise<void>;
   switchTenant: (tenantId: string) => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<string | null>;
 };
 
 const AuthCtx = createContext<Ctx | null>(null);
@@ -84,20 +84,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await apply(res);
   }, [apply]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<string | null> => {
     const stored = await load();
     if (!stored?.refreshToken) {
       setState(s => ({ ...s, loading: false }));
-      return;
+      return null;
     }
     try {
       const res = await api.post<AuthResponse>("/api/auth/refresh", { refreshToken: stored.refreshToken });
       await apply(res);
+      return res.accessToken;
     } catch {
       await persist(null);
       setState({ user: null, activeTenant: null, tenants: [], accessToken: null, loading: false });
+      return null;
     }
   }, [apply]);
+
+  // Expose `refresh` to the API client so any 401 response triggers a single
+  // refresh + retry without each caller having to handle re-auth manually.
+  useEffect(() => {
+    setRefreshCallback(refresh);
+    return () => setRefreshCallback(null);
+  }, [refresh]);
 
   // Hydrate on mount
   useEffect(() => {
