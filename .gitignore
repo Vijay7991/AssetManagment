@@ -7,6 +7,7 @@ node_modules/
 .next/
 .turbo/
 *.tsbuildinfo
+web/package-lock.json
 
 # .NET
 bin/
