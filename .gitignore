@@ -6,6 +6,7 @@
 node_modules/
 .next/
 .turbo/
+*.tsbuildinfo
 
 # .NET
 bin/
