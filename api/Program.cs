@@ -30,11 +30,13 @@ if (jwtOpts.Secret.Length < 32)
 
 var smtpOpts = builder.Configuration.GetSection("Smtp").Get<SmtpOptions>() ?? new SmtpOptions();
 var storageOpts = builder.Configuration.GetSection("Storage").Get<StorageOptions>() ?? new StorageOptions();
+var resendOpts = builder.Configuration.GetSection("Resend").Get<ResendOptions>() ?? new ResendOptions();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? new[] { "http://localhost:3000" };
 
 builder.Services.AddSingleton(jwtOpts);
 builder.Services.AddSingleton(smtpOpts);
+builder.Services.AddSingleton(resendOpts);
 builder.Services.AddSingleton(storageOpts);
 
 // ─── Database ────────────────────────────────────────────────────────
@@ -73,7 +75,18 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IBarcodeRenderer, BarcodeRenderer>();
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+// Pick the mail transport at startup based on whether RESEND_API_KEY was
+// supplied. Resend goes over HTTPS (port 443), so it works behind Cloudflare
+// Tunnel and firewalled networks where outbound SMTP is blocked. SMTP /
+// MailHog stays the dev default because it requires no external service.
+if (resendOpts.IsConfigured)
+{
+    builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>();
+}
+else
+{
+    builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+}
 builder.Services.AddSingleton<IMailHealth, MailHealth>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<INotifier, Notifier>();

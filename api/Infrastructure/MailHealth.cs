@@ -23,13 +23,15 @@ public class MailHealth : IMailHealth
     static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
     readonly SmtpOptions _smtp;
+    readonly ResendOptions _resend;
     readonly ILogger<MailHealth> _log;
     readonly SemaphoreSlim _gate = new(1, 1);
     MailHealthStatus? _cached;
 
-    public MailHealth(SmtpOptions smtp, ILogger<MailHealth> log)
+    public MailHealth(SmtpOptions smtp, ResendOptions resend, ILogger<MailHealth> log)
     {
         _smtp = smtp;
+        _resend = resend;
         _log = log;
     }
 
@@ -60,6 +62,14 @@ public class MailHealth : IMailHealth
     async Task<MailHealthStatus> ProbeAsync(CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
+
+        // If Resend is configured it's the active transport — no SMTP probe needed.
+        // We deliberately don't hit Resend's API here; doing so on every health-check
+        // request would burn through API quota for no benefit. The startup
+        // misconfiguration would show up as failed sends in the logs instead.
+        if (_resend.IsConfigured)
+            return new MailHealthStatus(true, now, "Resend");
+
         if (string.IsNullOrWhiteSpace(_smtp.Host) || _smtp.Port <= 0)
             return new MailHealthStatus(false, now, "SMTP host or port not configured.");
 

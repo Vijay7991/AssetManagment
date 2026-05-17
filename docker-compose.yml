@@ -42,6 +42,10 @@ services:
       Smtp__Host: ${SMTP_HOST}
       Smtp__Port: ${SMTP_PORT}
       Smtp__From: ${SMTP_FROM}
+      # When RESEND_API_KEY is empty, the API silently falls back to SMTP.
+      # Set RESEND_API_KEY + RESEND_FROM in .env to send via Resend instead.
+      Resend__ApiKey: ${RESEND_API_KEY:-}
+      Resend__From: ${RESEND_FROM:-onboarding@resend.dev}
       Cors__AllowedOrigins__0: "http://localhost:${WEB_PORT}"
       Cors__AllowedOrigins__1: "https://localhost"
     volumes:
