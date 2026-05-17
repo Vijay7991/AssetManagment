@@ -18,25 +18,15 @@ export default function AssetTypesPage() {
   const [fields, setFields] = useState<FieldSchemaItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  if (!canAccess) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
-        <TagIcon className="h-10 w-10 text-muted-foreground" />
-        <h2 className="text-lg font-semibold">Access restricted</h2>
-        <p className="text-sm text-muted-foreground">You need catalog management permission to view this page.</p>
-      </div>
-    );
-  }
-
   const types = useQuery({
     queryKey: ["asset-types"],
     queryFn: () => api.get<AssetTypeRecord[]>("/asset-types", accessToken),
-    enabled: !!accessToken,
+    enabled: !!accessToken && canAccess,
   });
   const cats = useQuery({
     queryKey: ["categories"],
     queryFn: () => api.get<Category[]>("/categories", accessToken),
-    enabled: !!accessToken,
+    enabled: !!accessToken && canAccess,
   });
 
   const create = useMutation({
@@ -55,6 +45,16 @@ export default function AssetTypesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["asset-types"] }),
     onError: (e: any) => setErr(e?.message || "Could not delete asset type."),
   });
+
+  if (!canAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
+        <TagIcon className="h-10 w-10 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Access restricted</h2>
+        <p className="text-sm text-muted-foreground">You need catalog management permission to view this page.</p>
+      </div>
+    );
+  }
 
   function addField() {
     setFields(f => [...f, { key: "", label: "", type: "string", required: false }]);
