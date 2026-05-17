@@ -11,7 +11,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@/components/Button";
 import { Badge, Card, prettyStatus, statusVariant } from "@/components/Card";
 import { QrTag } from "@/components/QrTag";
-import { NewTicketModal } from "@/app/(tabs)/maintenance";
+// Relative import — the "@" alias maps to ./src, not to ./app, so we can't use
+// "@/app/(tabs)/maintenance". Importing across the routes tree is unusual; we do
+// it here because the new-ticket modal is owned by the maintenance tab.
+import { NewTicketModal } from "../../(tabs)/maintenance";
 import { useAuth, useCan } from "@/lib/auth";
 import { api, AssetDetail, Movement, UnitListItem } from "@/lib/api";
 import { useTheme, spacing } from "@/lib/theme";
