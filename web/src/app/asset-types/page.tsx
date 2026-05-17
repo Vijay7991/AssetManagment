@@ -14,6 +14,9 @@ export default function AssetTypesPage() {
   const { accessToken } = useAuth();
   const canAccess = useCan("catalog:write");
   const qc = useQueryClient();
+  const [form, setForm] = useState({ name: "", categoryId: "" });
+  const [fields, setFields] = useState<FieldSchemaItem[]>([]);
+  const [err, setErr] = useState<string | null>(null);
 
   if (!canAccess) {
     return (
@@ -24,9 +27,6 @@ export default function AssetTypesPage() {
       </div>
     );
   }
-  const [form, setForm] = useState({ name: "", categoryId: "" });
-  const [fields, setFields] = useState<FieldSchemaItem[]>([]);
-  const [err, setErr] = useState<string | null>(null);
 
   const types = useQuery({
     queryKey: ["asset-types"],
