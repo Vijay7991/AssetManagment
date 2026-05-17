@@ -1,12 +1,12 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/lib/auth";
-import { api, AssetDetail } from "@/lib/api";
+import { api, ScanResult } from "@/lib/api";
 import { useTheme, spacing } from "@/lib/theme";
 
 export default function ScanScreen() {
@@ -37,9 +37,18 @@ export default function ScanScreen() {
     if (!code) return;
     setBusy(true); setError(null);
     try {
-      const asset = await api.get<AssetDetail>(`/api/tags/scan/${code}`, accessToken);
+      // /tags/scan returns a ScanResult wrapper: either a whole-asset tag or
+      // a unit-scoped tag. Route to the unit page when applicable so the user
+      // jumps straight to the physical instance they scanned.
+      const result = await api.get<ScanResult>(`/api/tags/scan/${code}`, accessToken);
       setScannerOn(false);
-      router.push(`/asset/${asset.id}`);
+      if (result.kind === "Unit" && result.unit) {
+        router.push(`/asset/${result.unit.assetId}/units/${result.unit.id}`);
+      } else if (result.kind === "Asset" && result.asset) {
+        router.push(`/asset/${result.asset.id}`);
+      } else {
+        setError(`Unexpected response for "${code}".`);
+      }
     } catch (e: any) {
       if (e?.status === 404) setError(`No asset matches "${code}" in this workspace.`);
       else setError(e?.message || "Lookup failed.");

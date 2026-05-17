@@ -14,35 +14,21 @@ export default function AssetTypesPage() {
   const { accessToken } = useAuth();
   const canAccess = useCan("catalog:write");
   const qc = useQueryClient();
-<<<<<<< HEAD
   // trackByUnit defaults off — bulk consumables stay simple. Operators turn it
   // on for asset types where each physical instance has its own identity.
   const [form, setForm] = useState({ name: "", categoryId: "", trackByUnit: false });
-=======
-
-  if (!canAccess) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
-        <TagIcon className="h-10 w-10 text-muted-foreground" />
-        <h2 className="text-lg font-semibold">Access restricted</h2>
-        <p className="text-sm text-muted-foreground">You need catalog management permission to view this page.</p>
-      </div>
-    );
-  }
-  const [form, setForm] = useState({ name: "", categoryId: "" });
->>>>>>> 8c6453b43a3e561ab005ebf433d0d3aebab55fdb
   const [fields, setFields] = useState<FieldSchemaItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   const types = useQuery({
     queryKey: ["asset-types"],
     queryFn: () => api.get<AssetTypeRecord[]>("/asset-types", accessToken),
-    enabled: !!accessToken,
+    enabled: !!accessToken && canAccess,
   });
   const cats = useQuery({
     queryKey: ["categories"],
     queryFn: () => api.get<Category[]>("/categories", accessToken),
-    enabled: !!accessToken,
+    enabled: !!accessToken && canAccess,
   });
 
   const create = useMutation({
@@ -61,6 +47,16 @@ export default function AssetTypesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["asset-types"] }),
     onError: (e: any) => setErr(e?.message || "Could not delete asset type."),
   });
+
+  if (!canAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
+        <TagIcon className="h-10 w-10 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Access restricted</h2>
+        <p className="text-sm text-muted-foreground">You need catalog management permission to view this page.</p>
+      </div>
+    );
+  }
 
   function addField() {
     setFields(f => [...f, { key: "", label: "", type: "string", required: false }]);

@@ -75,6 +75,12 @@ export default function LoginScreen() {
 
           <Button title={busy ? "Signing in…" : "Sign in"} onPress={onSubmit} loading={busy} fullWidth />
 
+          <Link href="/(auth)/forgot-password" asChild>
+            <Text style={[styles.linkRow, { color: t.accent, fontSize: 13 }]}>
+              Forgot password?
+            </Text>
+          </Link>
+
           <Link href="/(auth)/signup" asChild>
             <Text style={[styles.linkRow, { color: t.text }]}>
               No account? <Text style={{ fontWeight: "600" }}>Create one</Text>

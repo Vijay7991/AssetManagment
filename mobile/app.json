@@ -2,26 +2,44 @@
   "expo": {
     "name": "AssetHub",
     "slug": "assethub-mobile",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "assethub",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0A"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.assethub.mobile",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "AssetHub needs the camera to scan QR codes on asset labels.",
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
+        "NSPhotoLibraryUsageDescription": "AssetHub needs access to your photos to attach images to assets.",
+        "NSPhotoLibraryAddUsageDescription": "AssetHub needs to save QR code images you generate.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.assethub.mobile",
+      "versionCode": 1,
       "permissions": [
-        "CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
       ],
-      "usesCleartextTraffic": true
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0A"
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "bundler": "metro",
@@ -32,11 +50,26 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "AssetHub needs the camera to scan QR codes on asset labels."
+          "cameraPermission": "AssetHub needs the camera to scan QR codes on asset labels.",
+          "recordAudioAndroid": false
         }
       ],
-      "expo-font"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "AssetHub needs access to your photos to attach images to assets.",
+          "cameraPermission": "AssetHub needs the camera to take asset photos."
+        }
+      ],
+      "expo-font",
+      "expo-secure-store"
     ],
+    "extra": {
+      "defaultServerUrl": "https://www.asset-hub.uk",
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    },
     "experiments": {
       "typedRoutes": true
     }

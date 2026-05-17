@@ -12,6 +12,9 @@ export default function RootLayout() {
       queries: {
         staleTime: 30_000,
         retry: 1,
+        // RN apps don't have a focus event in the browser sense; we still
+        // refetch on app-foreground via TanStack's built-in AppState listener.
+        refetchOnWindowFocus: false,
       },
     },
   }));
@@ -28,7 +31,15 @@ export default function RootLayout() {
               <Stack.Screen name="setup" />
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="asset/[id]" options={{ headerShown: true, title: "Asset" }} />
+              <Stack.Screen
+                name="asset/[id]/index"
+                options={{ headerShown: true, title: "Asset" }} />
+              <Stack.Screen
+                name="asset/[id]/units/[unitId]"
+                options={{ headerShown: true, title: "Unit" }} />
+              <Stack.Screen
+                name="asset/new/index"
+                options={{ headerShown: true, title: "New asset" }} />
             </Stack>
           </AuthProvider>
         </QueryClientProvider>

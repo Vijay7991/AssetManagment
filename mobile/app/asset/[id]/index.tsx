@@ -4,13 +4,14 @@ import {
   ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@/components/Button";
 import { Badge, Card, prettyStatus, statusVariant } from "@/components/Card";
 import { useAuth, useCan } from "@/lib/auth";
-import { api, AssetDetail, Movement } from "@/lib/api";
+import { api, AssetDetail, Movement, UnitListItem } from "@/lib/api";
 import { useTheme, spacing } from "@/lib/theme";
 
 export default function AssetDetailScreen() {
@@ -35,6 +36,60 @@ export default function AssetDetailScreen() {
     queryFn: () => api.get<Movement[]>(`/api/assets/${id}/movements`, accessToken),
     enabled: !!accessToken && !!id,
   });
+
+  // Only fire the units request once we know the asset is unit-tracked;
+  // saves a round-trip for the common single-instance case.
+  const units = useQuery({
+    queryKey: ["units", id],
+    queryFn: () => api.get<UnitListItem[]>(`/api/assets/${id}/units`, accessToken),
+    enabled: !!accessToken && !!id && !!asset.data?.isUnitTracked,
+  });
+
+  const uploadPhoto = useMutation({
+    mutationFn: async (uri: string) => {
+      // Derive a sensible filename + MIME from the picker URI extension.
+      const name = uri.split("/").pop() || "photo.jpg";
+      const ext = name.split(".").pop()?.toLowerCase() || "jpg";
+      const type = ext === "png" ? "image/png"
+                 : ext === "webp" ? "image/webp"
+                 : ext === "gif" ? "image/gif"
+                 : "image/jpeg";
+      return api.upload(`/api/assets/${id}/photos`, { uri, name, type }, accessToken);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["asset", id] }),
+    onError: (e: any) => Alert.alert("Upload failed", e?.message || "Could not upload photo."),
+  });
+
+  async function pickAndUpload() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission needed", "Allow photo library access to upload images.");
+      return;
+    }
+    const r = await ImagePicker.launchImageLibraryAsync({
+      // expo-image-picker v17+ accepts an array of strings here; the legacy
+      // MediaTypeOptions enum is deprecated and emits a runtime warning.
+      mediaTypes: ["images"],
+      quality: 0.85,
+      allowsEditing: false,
+    });
+    if (r.canceled || !r.assets?.length) return;
+    uploadPhoto.mutate(r.assets[0].uri);
+  }
+
+  async function takeAndUpload() {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission needed", "Allow camera access to take photos.");
+      return;
+    }
+    const r = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
+      quality: 0.85,
+    });
+    if (r.canceled || !r.assets?.length) return;
+    uploadPhoto.mutate(r.assets[0].uri);
+  }
 
   if (asset.isLoading) {
     return (
@@ -126,9 +181,32 @@ export default function AssetDetailScreen() {
         )}
 
         {/* Photos */}
-        {a.photos.length > 0 && (
-          <Card>
-            <Text style={[styles.cardTitle, { color: t.text }]}>Photos ({a.photos.length})</Text>
+        <Card>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={[styles.cardTitle, { color: t.text }]}>
+              Photos ({a.photos.length})
+            </Text>
+            {canWrite && (
+              <View style={{ flexDirection: "row", gap: 6 }}>
+                <TouchableOpacity onPress={takeAndUpload} disabled={uploadPhoto.isPending}>
+                  <Ionicons name="camera-outline" size={22} color={t.accent} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={pickAndUpload} disabled={uploadPhoto.isPending}>
+                  <Ionicons name="image-outline" size={22} color={t.accent} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+          {uploadPhoto.isPending && (
+            <ActivityIndicator color={t.accent} style={{ marginTop: spacing.sm }} />
+          )}
+          {a.photos.length === 0 ? (
+            <Text style={{ color: t.textMuted, fontSize: 13, marginTop: spacing.sm }}>
+              {canWrite
+                ? "No photos yet. Use the camera or gallery icon above to add one."
+                : "No photos yet."}
+            </Text>
+          ) : (
             <FlatList
               data={a.photos}
               keyExtractor={p => p.id}
@@ -140,6 +218,41 @@ export default function AssetDetailScreen() {
                 <Image source={{ uri: item.url }} style={styles.photo} />
               )}
             />
+          )}
+        </Card>
+
+        {/* Units (only for unit-tracked assets) */}
+        {a.isUnitTracked && (
+          <Card>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={[styles.cardTitle, { color: t.text }]}>
+                Units ({a.unitCount}, {a.availableUnitCount} available)
+              </Text>
+            </View>
+            {units.isLoading && <ActivityIndicator color={t.accent} style={{ marginTop: spacing.sm }} />}
+            {units.data && units.data.length === 0 && (
+              <Text style={{ color: t.textMuted, fontSize: 13, marginTop: spacing.sm }}>
+                No units yet. Add them from the web app.
+              </Text>
+            )}
+            {units.data?.map(u => (
+              <TouchableOpacity
+                key={u.id}
+                style={[styles.unitRow, { borderColor: t.border }]}
+                onPress={() => router.push(`/asset/${a.id}/units/${u.id}`)}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.unitTitle, { color: t.text }]}>
+                    #{u.unitNumber}{u.serialNumber ? `  ·  ${u.serialNumber}` : ""}
+                  </Text>
+                  <Text style={[styles.unitMeta, { color: t.textMuted }]}>
+                    {u.assignedToName ? `with ${u.assignedToName}` : "Available"}
+                    {u.locationName ? ` · ${u.locationName}` : ""}
+                  </Text>
+                </View>
+                <Badge label={prettyStatus(u.status)} variant={statusVariant(u.status)} />
+                <Ionicons name="chevron-forward" size={16} color={t.textMuted} />
+              </TouchableOpacity>
+            ))}
           </Card>
         )}
 
@@ -331,6 +444,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   photo: { width: 120, height: 120, borderRadius: 8 },
+  unitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    marginTop: spacing.sm,
+  },
+  unitTitle: { fontSize: 14, fontWeight: "600" },
+  unitMeta: { fontSize: 12, marginTop: 2 },
   move: {
     flexDirection: "row",
     gap: spacing.sm,

@@ -7,7 +7,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "@/lib/auth";
+import { useAuth, useCan } from "@/lib/auth";
 import { api, AssetListItem, Paged } from "@/lib/api";
 import { useTheme, spacing } from "@/lib/theme";
 import { Badge, prettyStatus, statusVariant } from "@/components/Card";
@@ -17,6 +17,7 @@ export default function AssetsScreen() {
   const t = useTheme();
   const router = useRouter();
   const { accessToken } = useAuth();
+  const canWrite = useCan("assets:write");
   const [q, setQ] = useState("");
 
   const list = useQuery({
@@ -32,10 +33,19 @@ export default function AssetsScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["bottom"]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: t.text }]}>Assets</Text>
-        <Text style={[styles.subtitle, { color: t.textMuted }]}>
-          {list.data ? `${list.data.total} total` : "Loading…"}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.title, { color: t.text }]}>Assets</Text>
+          <Text style={[styles.subtitle, { color: t.textMuted }]}>
+            {list.data ? `${list.data.total} total` : "Loading…"}
+          </Text>
+        </View>
+        {canWrite && (
+          <TouchableOpacity
+            onPress={() => router.push("/asset/new")}
+            style={[styles.addBtn, { backgroundColor: t.primary }]}>
+            <Ionicons name="add" size={22} color={t.primaryText} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={[styles.searchRow, { backgroundColor: t.surface, borderColor: t.border }]}>
@@ -112,9 +122,21 @@ export default function AssetsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, padding: spacing.lg },
-  header: { marginBottom: spacing.md },
+  header: {
+    marginBottom: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   title: { fontSize: 24, fontWeight: "700" },
   subtitle: { fontSize: 13, marginTop: 4 },
+  addBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

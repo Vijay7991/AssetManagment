@@ -41,16 +41,6 @@ export default function MembersPage() {
   const { accessToken, activeTenant, user } = useAuth();
   const canManage = useCan("members:write");
   const qc = useQueryClient();
-
-  if (!canManage) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
-        <Users className="h-10 w-10 text-muted-foreground" />
-        <h2 className="text-lg font-semibold">Access restricted</h2>
-        <p className="text-sm text-muted-foreground">You need member management permission to view this page.</p>
-      </div>
-    );
-  }
   // Channel defaults to WhatsApp only if mail is down — initial render uses
   // Email and we flip it once the probe answers.
   const [form, setForm] = useState({ email: "", role: "Member", phone: "", channel: "Email" });
@@ -58,6 +48,7 @@ export default function MembersPage() {
   const [lastInvite, setLastInvite] = useState<Invite | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [permsFor, setPermsFor] = useState<Member | null>(null);
+  const [resetLink, setResetLink] = useState<{ email: string; link: string } | null>(null);
 
   // The mail probe is public, but we still pass the token so the standard
   // request helper doesn't trip on the credentials/CORS combo.
@@ -80,7 +71,7 @@ export default function MembersPage() {
   const members = useQuery({
     queryKey: ["members"],
     queryFn: () => api.get<Member[]>("/tenant/members", accessToken),
-    enabled: !!accessToken,
+    enabled: !!accessToken && canManage,
   });
   const invites = useQuery({
     queryKey: ["invites"],
@@ -127,7 +118,6 @@ export default function MembersPage() {
     onError: (e: any) => setErr(e?.message || "Could not update account status."),
   });
 
-  const [resetLink, setResetLink] = useState<{ email: string; link: string } | null>(null);
   const resetPassword = useMutation({
     mutationFn: ({ userId }: { userId: string; email: string }) =>
       api.post<AdminResetResponse>(`/tenant/members/${userId}/reset-password`, {}, accessToken),
@@ -137,6 +127,16 @@ export default function MembersPage() {
     },
     onError: (e: any) => setErr(e?.message || "Could not send reset link."),
   });
+
+  if (!canManage) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
+        <Users className="h-10 w-10 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Access restricted</h2>
+        <p className="text-sm text-muted-foreground">You need member management permission to view this page.</p>
+      </div>
+    );
+  }
 
   function copy(text: string, key: string) {
     navigator.clipboard.writeText(text).then(() => {

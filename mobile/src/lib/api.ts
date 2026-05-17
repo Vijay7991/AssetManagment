@@ -35,8 +35,10 @@ async function request<T>(
   init: RequestInit = {},
   opts: { auth?: string | null; raw?: boolean; skipRefresh?: boolean } = {}
 ): Promise<T> {
+  // getServerUrl now always returns a string (defaults to production URL),
+  // so callers never need to handle a null base. Falsy check kept defensively.
   const base = await getServerUrl();
-  if (!base) throw { status: 0, message: "Server URL not set" } satisfies ApiError;
+  if (!base) throw { status: 0, message: "Server URL not configured" } satisfies ApiError;
 
   let res: Response;
   try {
@@ -85,6 +87,15 @@ export const api = {
   put: <T,>(p: string, body?: unknown, auth?: string | null) =>
     request<T>(p, { method: "PUT", body: body ? JSON.stringify(body) : undefined }, { auth }),
   del: <T,>(p: string, auth?: string | null) => request<T>(p, { method: "DELETE" }, { auth }),
+  /// Upload a single file as multipart/form-data. Used for asset photos.
+  /// Pass a local URI (e.g. from expo-image-picker) — we wrap it into the
+  /// React Native FormData shape, which differs from web FormData.
+  upload: <T,>(p: string, file: { uri: string; name: string; type: string }, auth?: string | null) => {
+    const fd = new FormData();
+    // RN's FormData accepts this shape — cast to any to satisfy TS.
+    fd.append("file", { uri: file.uri, name: file.name, type: file.type } as any);
+    return request<T>(p, { method: "POST", body: fd }, { auth });
+  },
 };
 
 export async function buildPhotoUrl(photoId: string): Promise<string> {
@@ -108,6 +119,21 @@ export type {
   Tag,
   Photo,
   AssetDetail,
+  Category,
+  Location,
+  AssetTypeRecord,
+  FieldSchemaItem,
+  UnitListItem,
+  UnitDetail,
+  UnitScanResult,
+  ScanResult,
   MovementKind,
   Movement,
+  AuditEvent,
+  MaintenanceKind,
+  MaintenanceStatus,
+  MaintenancePriority,
+  MaintenanceTicket,
+  Notification,
+  ImportResult,
 } from "@shared/dto";
