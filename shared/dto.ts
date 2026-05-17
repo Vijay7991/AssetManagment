@@ -147,6 +147,7 @@ export type AssetDetail = {
   categoryName: string;
   fieldValues: Record<string, unknown> | null;
   purchasePrice: number | null;
+  currency: string;
   purchasedOn: string | null;
   warrantyUntil: string | null;
   assignedToUserId: string | null;

@@ -137,7 +137,7 @@ export default function AssetDetailScreen() {
               value={[a.locationName, a.locationDetail].filter(Boolean).join(" · ") || "—"}
             />
             <KV label="Assigned to" value={a.assignedToName || "Unassigned"} />
-            {a.purchasePrice != null && <KV label="Purchase price" value={`$${a.purchasePrice.toFixed(2)}`} />}
+            {a.purchasePrice != null && <KV label="Purchase price" value={`${a.currency === "INR" ? "₹" : "$"}${a.purchasePrice.toFixed(2)}`} />}
             {a.purchasedOn && <KV label="Purchased on" value={a.purchasedOn} />}
             {a.warrantyUntil && <KV label="Warranty until" value={a.warrantyUntil} />}
           </View>

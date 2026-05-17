@@ -247,6 +247,10 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    // Idempotent schema patches for columns added after initial EnsureCreated.
+    await db.Database.ExecuteSqlRawAsync(
+        "ALTER TABLE \"Assets\" ADD COLUMN IF NOT EXISTS \"Currency\" VARCHAR(3) NOT NULL DEFAULT 'USD'");
+
     // Promote the configured email to root admin if it already exists. If the
     // address hasn't signed up yet, the flag will be set on next startup once
     // the account is created — running this idempotently every boot is fine.

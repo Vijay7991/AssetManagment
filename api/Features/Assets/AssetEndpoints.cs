@@ -34,6 +34,7 @@ public record AssetDetailDto(
     string CategoryName,
     JsonElement? FieldValues,
     decimal? PurchasePrice,
+    string Currency,
     DateOnly? PurchasedOn,
     DateOnly? WarrantyUntil,
     Guid? AssignedToUserId,
@@ -67,6 +68,7 @@ public record AssetCreateRequest(
     string? Status,
     JsonElement? FieldValues,
     decimal? PurchasePrice,
+    string? Currency,
     DateOnly? PurchasedOn,
     DateOnly? WarrantyUntil,
     /// Overrides AssetType.TrackByUnit for this asset. Null = inherit the type's default.
@@ -86,6 +88,7 @@ public record AssetUpdateRequest(
     string? Status,
     JsonElement? FieldValues,
     decimal? PurchasePrice,
+    string? Currency,
     DateOnly? PurchasedOn,
     DateOnly? WarrantyUntil,
     Guid? AssignedToUserId);
@@ -228,6 +231,7 @@ public static class AssetEndpoints
             IsUnitTracked = isUnitTracked,
             FieldValues = req.FieldValues is null ? null : JsonDocument.Parse(req.FieldValues.Value.GetRawText()),
             PurchasePrice = req.PurchasePrice,
+            Currency = req.Currency is "INR" ? "INR" : "USD",
             PurchasedOn = req.PurchasedOn,
             WarrantyUntil = req.WarrantyUntil,
             CreatedBy = cu.UserId!.Value,
@@ -335,6 +339,7 @@ public static class AssetEndpoints
         if (req.FieldValues is not null)
             asset.FieldValues = JsonDocument.Parse(req.FieldValues.Value.GetRawText());
         asset.PurchasePrice = req.PurchasePrice;
+        asset.Currency = req.Currency is "INR" ? "INR" : "USD";
         asset.PurchasedOn = req.PurchasedOn;
         asset.WarrantyUntil = req.WarrantyUntil;
         asset.AssignedToUserId = req.AssignedToUserId;
@@ -410,7 +415,7 @@ public static class AssetEndpoints
             displayQty, a.Status.ToString(),
             a.AssetTypeId, a.AssetType.Name, a.AssetType.CategoryId, a.AssetType.Category.Name,
             a.FieldValues?.RootElement,
-            a.PurchasePrice, a.PurchasedOn, a.WarrantyUntil,
+            a.PurchasePrice, a.Currency, a.PurchasedOn, a.WarrantyUntil,
             a.AssignedToUserId, a.AssignedToUser?.DisplayName,
             a.IsUnitTracked, unitCount, availableCount,
             a.Tags.Where(t => t.UnitId == null).Select(t => new TagDto(

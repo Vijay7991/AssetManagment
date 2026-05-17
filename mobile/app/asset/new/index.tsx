@@ -46,6 +46,8 @@ export default function NewAssetScreen() {
   const [locationDetail, setLocationDetail] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [status, setStatus] = useState<typeof STATUSES[number]>("InService");
+  const [currency, setCurrency] = useState<"USD" | "INR">("USD");
+  const [purchasePrice, setPurchasePrice] = useState("");
   const [isUnitTrackedOverride, setIsUnitTrackedOverride] = useState<boolean | null>(null);
   const [coverPhotoUri, setCoverPhotoUri] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -69,7 +71,8 @@ export default function NewAssetScreen() {
       quantity: quantityNum,
       status,
       fieldValues: null,
-      purchasePrice: null,
+      purchasePrice: purchasePrice ? Number(purchasePrice) : null,
+      currency,
       purchasedOn: null,
       warrantyUntil: null,
       isUnitTracked: isUnitTrackedOverride,
@@ -209,6 +212,27 @@ export default function NewAssetScreen() {
               </Field>
             </View>
           </View>
+
+          <Field label="Purchase price">
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <Picker
+                value={currency}
+                options={[{ value: "USD", label: "$ USD" }, { value: "INR", label: "₹ INR" }]}
+                placeholder="Currency"
+                onChange={(v) => setCurrency(v as "USD" | "INR")}
+              />
+              <View style={{ flex: 2 }}>
+                <TextInput
+                  value={purchasePrice}
+                  onChangeText={setPurchasePrice}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  placeholderTextColor={t.textMuted}
+                  style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.surface }]}
+                />
+              </View>
+            </View>
+          </Field>
 
           {selectedType && (
             <View style={[styles.unitCard, { borderColor: t.border, backgroundColor: t.surface }]}>

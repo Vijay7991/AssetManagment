@@ -43,6 +43,7 @@ export default function EditAssetPage() {
     quantity: 1,
     status: "InService",
     purchasePrice: "",
+    currency: "USD",
     purchasedOn: "",
     warrantyUntil: "",
     assignedToUserId: "",
@@ -62,6 +63,7 @@ export default function EditAssetPage() {
       quantity: a.quantity,
       status: a.status,
       purchasePrice: a.purchasePrice != null ? String(a.purchasePrice) : "",
+      currency: a.currency || "USD",
       purchasedOn: a.purchasedOn || "",
       warrantyUntil: a.warrantyUntil || "",
       assignedToUserId: a.assignedToUserId || "",
@@ -101,6 +103,7 @@ export default function EditAssetPage() {
       status: form.status,
       fieldValues: Object.keys(fieldValues).length ? fieldValues : null,
       purchasePrice: form.purchasePrice ? Number(form.purchasePrice) : null,
+      currency: form.currency,
       purchasedOn: form.purchasedOn || null,
       warrantyUntil: form.warrantyUntil || null,
       assignedToUserId: form.assignedToUserId || null,
@@ -165,8 +168,17 @@ export default function EditAssetPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="purchasePrice">Purchase price</Label>
-                <Input id="purchasePrice" type="number" step="0.01" value={form.purchasePrice}
-                       onChange={e => setForm(f => ({ ...f, purchasePrice: e.target.value }))} />
+                <div className="flex gap-2">
+                  <select
+                    value={form.currency}
+                    onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm font-medium">
+                    <option value="USD">$ USD</option>
+                    <option value="INR">₹ INR</option>
+                  </select>
+                  <Input id="purchasePrice" type="number" step="0.01" value={form.purchasePrice}
+                         onChange={e => setForm(f => ({ ...f, purchasePrice: e.target.value }))} />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="purchasedOn">Purchased on</Label>

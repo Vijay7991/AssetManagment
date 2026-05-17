@@ -38,6 +38,7 @@ export default function NewAssetPage() {
     quantity: 1,
     status: "InService",
     purchasePrice: "",
+    currency: "USD",
     purchasedOn: "",
     warrantyUntil: "",
   });
@@ -101,6 +102,7 @@ export default function NewAssetPage() {
         status: form.status,
         fieldValues: Object.keys(fieldValues).length ? fieldValues : null,
         purchasePrice: form.purchasePrice ? Number(form.purchasePrice) : null,
+        currency: form.currency,
         purchasedOn: form.purchasedOn || null,
         warrantyUntil: form.warrantyUntil || null,
         // Send the override only when the user actually toggled it — null lets
@@ -182,8 +184,17 @@ export default function NewAssetPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="purchasePrice">Purchase price</Label>
-                <Input id="purchasePrice" type="number" step="0.01" value={form.purchasePrice}
-                       onChange={e => setForm(f => ({ ...f, purchasePrice: e.target.value }))} />
+                <div className="flex gap-2">
+                  <select
+                    value={form.currency}
+                    onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm font-medium">
+                    <option value="USD">$ USD</option>
+                    <option value="INR">₹ INR</option>
+                  </select>
+                  <Input id="purchasePrice" type="number" step="0.01" value={form.purchasePrice}
+                         onChange={e => setForm(f => ({ ...f, purchasePrice: e.target.value }))} />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="purchasedOn">Purchased on</Label>

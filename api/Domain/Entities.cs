@@ -194,6 +194,8 @@ public class Asset
     public JsonDocument? FieldValues { get; set; }
 
     public decimal? PurchasePrice { get; set; }
+    /// ISO-4217 currency code for PurchasePrice. Defaults to "USD".
+    [MaxLength(3)] public string Currency { get; set; } = "USD";
     public DateOnly? PurchasedOn { get; set; }
     public DateOnly? WarrantyUntil { get; set; }
 

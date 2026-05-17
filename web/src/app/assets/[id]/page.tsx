@@ -204,7 +204,7 @@ export default function AssetDetailPage() {
                 </Field>
                 <Field label="Assigned to">{a.assignedToName || "Unassigned"}</Field>
                 <Field label="Purchase price">
-                  {a.purchasePrice != null ? `$${a.purchasePrice.toFixed(2)}` : "—"}
+                  {a.purchasePrice != null ? `${a.currency === "INR" ? "₹" : "$"}${a.purchasePrice.toFixed(2)}` : "—"}
                 </Field>
                 <Field label="Purchased on">{formatDate(a.purchasedOn)}</Field>
                 <Field label="Warranty until">{formatDate(a.warrantyUntil)}</Field>
