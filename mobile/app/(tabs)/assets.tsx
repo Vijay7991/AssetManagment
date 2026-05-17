@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator, FlatList, Image, Modal, Pressable, RefreshControl,
+  ActivityIndicator, FlatList, Image, Pressable, RefreshControl,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -35,7 +35,8 @@ export default function AssetsScreen() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
-  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
   const [warrantyExpiring, setWarrantyExpiring] = useState(false);
 
   // Sync filters from incoming route params (dashboard KPI taps land here with
@@ -111,61 +112,79 @@ export default function AssetsScreen() {
         )}
       </View>
 
-      {/* Status filter chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}>
-        {STATUS_FILTERS.map(f => {
-          const active = statusFilter === f.value;
-          return (
-            <Pressable
-              key={f.value}
-              onPress={() => setStatusFilter(active ? "" : f.value)}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor: active ? t.primary : t.surface,
-                  borderColor: active ? t.primary : t.border,
-                },
-              ]}>
-              <Text style={{ color: active ? t.primaryText : t.text, fontSize: 12, fontWeight: "600" }}>
-                {f.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      {/* Compact single-row filter: Status / Location dropdowns + warranty toggle */}
+      <View style={[styles.filterRow, { zIndex: 10 }]}>
+        <View style={{ flex: 1 }}>
+          <Pressable
+            onPress={() => { setStatusOpen(o => !o); setLocationOpen(false); }}
+            style={[styles.filterBtn, { borderColor: statusFilter ? t.accent : t.border, backgroundColor: t.surface }]}>
+            <Text style={{ color: statusFilter ? t.accent : t.text, fontSize: 12, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+              {STATUS_FILTERS.find(f => f.value === statusFilter)?.label || "All status"}
+            </Text>
+            <Ionicons name={statusOpen ? "chevron-up" : "chevron-down"} size={12} color={t.textMuted} />
+          </Pressable>
+          {statusOpen && (
+            <View style={[styles.filterList, { borderColor: t.border, backgroundColor: t.surface }]}>
+              {STATUS_FILTERS.map(f => (
+                <Pressable
+                  key={f.value}
+                  onPress={() => { setStatusFilter(f.value); setStatusOpen(false); }}
+                  style={[styles.filterOpt, { borderTopColor: t.border }]}>
+                  <Text style={{ color: t.text, fontSize: 13 }}>{f.label}</Text>
+                  {statusFilter === f.value && <Ionicons name="checkmark" size={14} color={t.accent} />}
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
 
-      {/* Secondary filters: location + warranty */}
-      <View style={styles.secondaryRow}>
-        <Pressable
-          onPress={() => setLocationPickerOpen(true)}
-          style={[styles.secondaryBtn, { borderColor: locationFilter ? t.accent : t.border, backgroundColor: t.surface }]}>
-          <Ionicons name="location-outline" size={14} color={locationFilter ? t.accent : t.textMuted} />
-          <Text style={{ color: locationFilter ? t.accent : t.text, fontSize: 12, fontWeight: "600", marginLeft: 4 }}
-                numberOfLines={1}>
-            {activeLocationName || "All locations"}
-          </Text>
-          <Ionicons name="chevron-down" size={12} color={t.textMuted} style={{ marginLeft: 2 }} />
-        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Pressable
+            onPress={() => { setLocationOpen(o => !o); setStatusOpen(false); }}
+            style={[styles.filterBtn, { borderColor: locationFilter ? t.accent : t.border, backgroundColor: t.surface }]}>
+            <Text style={{ color: locationFilter ? t.accent : t.text, fontSize: 12, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+              {activeLocationName || "All locations"}
+            </Text>
+            <Ionicons name={locationOpen ? "chevron-up" : "chevron-down"} size={12} color={t.textMuted} />
+          </Pressable>
+          {locationOpen && (
+            <View style={[styles.filterList, { borderColor: t.border, backgroundColor: t.surface, maxHeight: 280 }]}>
+              <ScrollView nestedScrollEnabled>
+                <Pressable
+                  onPress={() => { setLocationFilter(""); setLocationOpen(false); }}
+                  style={[styles.filterOpt, { borderTopColor: t.border }]}>
+                  <Text style={{ color: t.text, fontSize: 13 }}>All locations</Text>
+                  {!locationFilter && <Ionicons name="checkmark" size={14} color={t.accent} />}
+                </Pressable>
+                {locations.data?.map(loc => (
+                  <Pressable
+                    key={loc.id}
+                    onPress={() => { setLocationFilter(loc.id); setLocationOpen(false); }}
+                    style={[styles.filterOpt, { borderTopColor: t.border }]}>
+                    <Text style={{ color: t.text, fontSize: 13 }} numberOfLines={1}>{loc.name}</Text>
+                    {locationFilter === loc.id && <Ionicons name="checkmark" size={14} color={t.accent} />}
+                  </Pressable>
+                ))}
+                {(!locations.data || locations.data.length === 0) && (
+                  <Text style={{ color: t.textMuted, fontSize: 12, padding: spacing.md }}>No locations yet.</Text>
+                )}
+              </ScrollView>
+            </View>
+          )}
+        </View>
 
         <Pressable
           onPress={() => setWarrantyExpiring(v => !v)}
-          style={[styles.secondaryBtn, {
+          style={[styles.iconBtn, {
             borderColor: warrantyExpiring ? t.danger : t.border,
             backgroundColor: warrantyExpiring ? t.danger + "18" : t.surface,
           }]}>
-          <Ionicons name="alarm-outline" size={14} color={warrantyExpiring ? t.danger : t.textMuted} />
-          <Text style={{ color: warrantyExpiring ? t.danger : t.text, fontSize: 12, fontWeight: "600", marginLeft: 4 }}>
-            Warranty &lt; 30d
-          </Text>
+          <Ionicons name="alarm-outline" size={16} color={warrantyExpiring ? t.danger : t.textMuted} />
         </Pressable>
 
         {hasActiveFilter && (
-          <Pressable onPress={clearAll} style={[styles.secondaryBtn, { borderColor: t.border, backgroundColor: t.surface }]}>
-            <Ionicons name="close" size={14} color={t.textMuted} />
-            <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: "600", marginLeft: 4 }}>Clear</Text>
+          <Pressable onPress={clearAll} style={[styles.iconBtn, { borderColor: t.border, backgroundColor: t.surface }]}>
+            <Ionicons name="close" size={16} color={t.textMuted} />
           </Pressable>
         )}
       </View>
@@ -227,43 +246,6 @@ export default function AssetsScreen() {
         />
       )}
 
-      {/* Location picker modal */}
-      <Modal visible={locationPickerOpen} transparent animationType="slide" onRequestClose={() => setLocationPickerOpen(false)}>
-        <Pressable style={styles.modalBg} onPress={() => setLocationPickerOpen(false)}>
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            style={[styles.modalSheet, { backgroundColor: t.background, borderColor: t.border }]}>
-            <View style={styles.modalHead}>
-              <Text style={{ color: t.text, fontSize: 16, fontWeight: "600" }}>Filter by location</Text>
-              <TouchableOpacity onPress={() => setLocationPickerOpen(false)}>
-                <Ionicons name="close" size={22} color={t.textMuted} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{ maxHeight: 400 }}>
-              <Pressable
-                onPress={() => { setLocationFilter(""); setLocationPickerOpen(false); }}
-                style={[styles.locOpt, { borderBottomColor: t.border }]}>
-                <Text style={{ color: t.text, fontSize: 15 }}>All locations</Text>
-                {!locationFilter && <Ionicons name="checkmark" size={18} color={t.accent} />}
-              </Pressable>
-              {locations.data?.map(loc => (
-                <Pressable
-                  key={loc.id}
-                  onPress={() => { setLocationFilter(loc.id); setLocationPickerOpen(false); }}
-                  style={[styles.locOpt, { borderBottomColor: t.border }]}>
-                  <Text style={{ color: t.text, fontSize: 15 }}>{loc.name}</Text>
-                  {locationFilter === loc.id && <Ionicons name="checkmark" size={18} color={t.accent} />}
-                </Pressable>
-              ))}
-              {(!locations.data || locations.data.length === 0) && (
-                <Text style={{ color: t.textMuted, fontSize: 13, padding: spacing.lg, textAlign: "center" }}>
-                  No locations yet. Create them from the web app.
-                </Text>
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -294,30 +276,46 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15 },
   filterRow: {
-    gap: spacing.sm,
-    paddingBottom: spacing.sm,
-    paddingTop: 2,
-  },
-  chip: {
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  secondaryRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  secondaryBtn: {
+  filterBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     borderWidth: 1,
-    borderRadius: 999,
-    paddingVertical: 5,
+    borderRadius: 10,
     paddingHorizontal: 10,
-    maxWidth: 200,
+    paddingVertical: 8,
+    gap: 4,
+  },
+  filterList: {
+    position: "absolute",
+    top: 38,
+    left: 0,
+    right: 0,
+    borderWidth: 1,
+    borderRadius: 10,
+    overflow: "hidden",
+    zIndex: 20,
+    elevation: 4,
+  },
+  filterOpt: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderTopWidth: 1,
+  },
+  iconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   row: {
@@ -336,28 +334,4 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: "600" },
   rowSub: { fontSize: 12, marginTop: 2 },
   rowCode: { fontSize: 11, fontFamily: "monospace", marginTop: 2 },
-  modalBg: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalSheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderTopWidth: 1,
-    padding: spacing.lg,
-  },
-  modalHead: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  locOpt: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
 });
