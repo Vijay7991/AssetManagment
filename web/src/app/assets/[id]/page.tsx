@@ -11,7 +11,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/card";
 import {
   ArrowLeft, ArrowRight, Boxes, Camera, ChevronRight, Hash, History,
-  MapPin, Pencil, Plus, Printer, Trash2, UserCheck, UserMinus, Wrench, X,
+  MapPin, Pencil, Plus, Printer, ScanLine, Trash2, UserCheck, UserMinus, Wrench, X,
 } from "lucide-react";
 import { formatDate, formatDateTime, relativeTime } from "@/lib/utils";
 import { StatusBadge } from "@/components/status";
