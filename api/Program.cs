@@ -13,8 +13,10 @@ using AssetHub.Api.Features.RootAdmin;
 using AssetHub.Api.Features.Tags;
 using AssetHub.Api.Features.Tenants;
 using AssetHub.Api.Infrastructure;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -80,6 +82,35 @@ builder.Services.AddScoped<INotifier, Notifier>();
 builder.Services.AddSingleton<WarrantyNotificationService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WarrantyNotificationService>());
 
+// ─── Rate limiting ───────────────────────────────────────────────────
+// Throttles credential-handling endpoints to blunt brute-force / enumeration.
+// "auth-credentials" (login/signup): tight, IP-keyed.
+// "auth-refresh": looser since legitimate browsers refresh on every page load.
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    o.AddPolicy("auth-credentials", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    o.AddPolicy("auth-refresh", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
+
 // ─── CORS ────────────────────────────────────────────────────────────
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins(allowedOrigins)
@@ -104,6 +135,7 @@ fwd.KnownProxies.Clear();
 app.UseForwardedHeaders(fwd);
 
 app.UseCors();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -138,10 +170,13 @@ app.MapGet("/api/whoami", (ICurrentUser cu, HttpContext ctx) =>
     });
 }).RequireAuthorization();
 
-// Manual trigger for warranty scan — useful for testing without waiting
+// Manual trigger for warranty scan — useful for testing without waiting.
+// Restricted to platform root admins to prevent tenant users from forcing
+// background work on the host.
 app.MapPost("/api/admin/scan-warranties", async (
-    WarrantyNotificationService svc, CancellationToken ct) =>
+    WarrantyNotificationService svc, ICurrentUser cu, CancellationToken ct) =>
 {
+    if (!cu.IsRootAdmin) return Results.Forbid();
     await svc.ScanOnceAsync(ct);
     return Results.Ok(new { ran = true });
 }).RequireAuthorization();

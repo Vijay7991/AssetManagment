@@ -3,6 +3,7 @@ using AssetHub.Api.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace AssetHub.Api.Features.Auth;
@@ -13,9 +14,9 @@ public static class AuthEndpoints
     {
         var grp = app.MapGroup("/api/auth").WithTags("Auth");
 
-        grp.MapPost("/signup", Signup).AllowAnonymous();
-        grp.MapPost("/login", Login).AllowAnonymous();
-        grp.MapPost("/refresh", Refresh).AllowAnonymous();
+        grp.MapPost("/signup", Signup).AllowAnonymous().RequireRateLimiting("auth-credentials");
+        grp.MapPost("/login", Login).AllowAnonymous().RequireRateLimiting("auth-credentials");
+        grp.MapPost("/refresh", Refresh).AllowAnonymous().RequireRateLimiting("auth-refresh");
         grp.MapPost("/logout", Logout).RequireAuthorization();
         grp.MapGet("/me", Me).RequireAuthorization();
         grp.MapPost("/switch-tenant/{tenantId:guid}", SwitchTenant).RequireAuthorization();

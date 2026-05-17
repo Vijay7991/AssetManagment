@@ -65,7 +65,7 @@ services:
       - "${WEB_PORT}:3000"
 
   mail:
-    image: mailhog/mailhog:latest
+    image: mailhog/mailhog:v1.0.1
     restart: unless-stopped
     ports:
       - "${MAILHOG_UI_PORT}:8025"
