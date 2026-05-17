@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@/components/Button";
 import { Badge, Card, prettyStatus, statusVariant } from "@/components/Card";
+import { QrTag } from "@/components/QrTag";
 import { useAuth, useCan } from "@/lib/auth";
 import { api, AssetDetail, Movement, UnitListItem } from "@/lib/api";
 import { useTheme, spacing } from "@/lib/theme";
@@ -170,11 +171,7 @@ export default function AssetDetailScreen() {
           <Card>
             <Text style={[styles.cardTitle, { color: t.text }]}>Tag</Text>
             <View style={{ alignItems: "center", marginTop: spacing.sm }}>
-              <Image
-                source={{ uri: primaryTag.qrUrl }}
-                style={{ width: 200, height: 200, backgroundColor: "#fff", borderRadius: 8 }}
-                resizeMode="contain"
-              />
+              <QrTag code={primaryTag.code} size={200} />
               <Text style={[styles.tagCode, { color: t.text }]}>{primaryTag.code}</Text>
             </View>
           </Card>

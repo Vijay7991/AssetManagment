@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { CheckCircle2, Smartphone } from "lucide-react";
 
-const ANDROID_APK_URL =
-  "https://expo.dev/accounts/vijayamni/projects/assethub-mobile/builds/39dee09e-342d-4112-b357-5ef8d7a8e2c7";
+// Served from web/public/downloads/assethub.apk so clicking triggers a
+// direct download instead of opening the Expo build page.
+const ANDROID_APK_URL = "/downloads/assethub.apk";
 
 export default function SettingsPage() {
   const { user, activeTenant, accessToken, logout } = useAuth();
@@ -122,7 +123,7 @@ export default function SettingsPage() {
             Compatible with Android 8.0 and above.
           </div>
           <Button asChild>
-            <a href={ANDROID_APK_URL} target="_blank" rel="noopener noreferrer">
+            <a href={ANDROID_APK_URL} download="assethub.apk">
               <Smartphone className="mr-2 h-4 w-4" /> Download APK
             </a>
           </Button>

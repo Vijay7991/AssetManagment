@@ -27,3 +27,9 @@ data/
 # contain user PII and password hashes.
 backups/
 *.sql.gz
+
+# Mobile-app binaries served by the web app — too large for git. Drop the
+# latest production APK at web/public/downloads/assethub.apk on the host.
+web/public/downloads/*.apk
+web/public/downloads/*.aab
+web/public/downloads/*.ipa

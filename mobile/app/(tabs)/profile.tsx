@@ -1,16 +1,17 @@
 import { useRouter } from "expo-router";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { useAuth } from "@/lib/auth";
 import { clearServerUrl, getServerUrl } from "@/lib/server";
-import { useTheme, spacing } from "@/lib/theme";
+import { useTheme, useThemeMode, spacing, ThemeMode } from "@/lib/theme";
 import { useEffect, useState } from "react";
 
 export default function ProfileScreen() {
   const t = useTheme();
+  const { mode, setMode } = useThemeMode();
   const router = useRouter();
   const { user, activeTenant, tenants, switchTenant, logout } = useAuth();
   const [serverUrl, setServerUrl] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["bottom"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
         <Text style={[styles.title, { color: t.text }]}>Profile</Text>
 
@@ -96,6 +97,35 @@ export default function ProfileScreen() {
             ))}
           </Card>
         )}
+
+        <Card>
+          <Text style={[styles.section, { color: t.text }]}>Appearance</Text>
+          <View style={[styles.segment, { borderColor: t.border, backgroundColor: t.surface }]}>
+            {(["light", "dark", "system"] as ThemeMode[]).map((m) => {
+              const active = mode === m;
+              const icon = m === "light" ? "sunny-outline" : m === "dark" ? "moon-outline" : "phone-portrait-outline";
+              const label = m === "light" ? "Light" : m === "dark" ? "Dark" : "System";
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => setMode(m)}
+                  style={[
+                    styles.segmentBtn,
+                    active && { backgroundColor: t.background, borderColor: t.accent },
+                  ]}>
+                  <Ionicons name={icon as any} size={16} color={active ? t.accent : t.textMuted} />
+                  <Text style={{
+                    color: active ? t.text : t.textMuted,
+                    fontWeight: active ? "600" : "500",
+                    fontSize: 13,
+                  }}>
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
 
         <Card>
           <Text style={[styles.section, { color: t.text }]}>Server</Text>
@@ -157,4 +187,23 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   serverUrl: { fontSize: 13, fontFamily: "monospace" },
+  segment: {
+    flexDirection: "row",
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
 });

@@ -74,7 +74,7 @@ export default function ScanScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["bottom"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: t.text }]}>Scan</Text>
         <Text style={[styles.subtitle, { color: t.textMuted }]}>

@@ -31,7 +31,7 @@ export default function AssetsScreen() {
   });
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["bottom"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: t.text }]}>Assets</Text>

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/lib/auth";
+import { ThemeProvider } from "@/lib/theme";
 
 export default function RootLayout() {
   const [qc] = useState(() => new QueryClient({
@@ -23,6 +24,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={qc}>
+          <ThemeProvider>
           <AuthProvider>
             <StatusBar style="auto" />
             <Stack
@@ -42,6 +44,7 @@ export default function RootLayout() {
                 options={{ headerShown: true, title: "New asset" }} />
             </Stack>
           </AuthProvider>
+          </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

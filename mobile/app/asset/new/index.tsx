@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
+  ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,12 +45,17 @@ export default function NewAssetScreen() {
   const [locationDetail, setLocationDetail] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [status, setStatus] = useState<typeof STATUSES[number]>("InService");
+  const [isUnitTrackedOverride, setIsUnitTrackedOverride] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const selectedType = useMemo(
     () => types.data?.find(x => x.id === assetTypeId),
     [types.data, assetTypeId]
   );
+
+  // Resolved flag: explicit override wins, otherwise fall back to the type's default.
+  const isUnitTracked = isUnitTrackedOverride ?? !!selectedType?.trackByUnit;
+  const quantityNum = Math.max(1, parseInt(quantity, 10) || 1);
 
   const create = useMutation({
     mutationFn: () => api.post<AssetDetail>("/api/assets", {
@@ -59,14 +64,19 @@ export default function NewAssetScreen() {
       description: description.trim() || null,
       locationId: locationId || null,
       locationDetail: locationDetail.trim() || null,
-      quantity: Math.max(1, parseInt(quantity, 10) || 1),
+      quantity: quantityNum,
       status,
       fieldValues: null,
       purchasePrice: null,
       purchasedOn: null,
       warrantyUntil: null,
-      isUnitTracked: null,
-      units: null,
+      isUnitTracked: isUnitTrackedOverride,
+      units: isUnitTracked
+        ? Array.from({ length: quantityNum }, () => ({
+            serialNumber: null,
+            warrantyUntil: null,
+          }))
+        : null,
     }, accessToken),
     onSuccess: (asset) => {
       qc.invalidateQueries({ queryKey: ["assets"] });
@@ -113,12 +123,6 @@ export default function NewAssetScreen() {
                 placeholder="Choose a type"
                 onChange={setAssetTypeId}
               />
-            )}
-            {selectedType?.trackByUnit && (
-              <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 4 }}>
-                This type tracks each instance as a separate unit with its own
-                barcode. Add units after creating from the asset's detail page.
-              </Text>
             )}
           </Field>
 
@@ -177,6 +181,33 @@ export default function NewAssetScreen() {
               </Field>
             </View>
           </View>
+
+          {selectedType && (
+            <View style={[styles.unitCard, { borderColor: t.border, backgroundColor: t.surface }]}>
+              <View style={styles.unitRow}>
+                <View style={{ flex: 1, paddingRight: spacing.md }}>
+                  <Text style={{ color: t.text, fontSize: 14, fontWeight: "600" }}>
+                    Track each unit individually
+                  </Text>
+                  <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 4 }}>
+                    {isUnitTracked
+                      ? `Each of the ${quantityNum} unit${quantityNum === 1 ? "" : "s"} will get its own QR code and identity.`
+                      : "All units share one QR code and a single record."}
+                  </Text>
+                </View>
+                <Switch
+                  value={isUnitTracked}
+                  onValueChange={(v) => setIsUnitTrackedOverride(v)}
+                  trackColor={{ false: t.border, true: t.accent }}
+                />
+              </View>
+              {selectedType.trackByUnit && (
+                <Text style={{ color: t.textMuted, fontSize: 11, marginTop: spacing.sm }}>
+                  Default for {selectedType.name} is on. You can override it here.
+                </Text>
+              )}
+            </View>
+          )}
 
           {err && (
             <Card style={{ borderColor: t.danger, backgroundColor: "rgba(220,38,38,0.06)" }}>
@@ -295,6 +326,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+  },
+  unitCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: spacing.md,
+  },
+  unitRow: {
+    flexDirection: "row",
     alignItems: "center",
   },
 });

@@ -1,4 +1,6 @@
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useColorScheme } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const palette = {
   light: {
@@ -30,10 +32,58 @@ export const palette = {
 };
 
 export type Theme = typeof palette.light;
+export type ThemeMode = "light" | "dark" | "system";
 
+const STORAGE_KEY = "assethub.theme.mode";
+
+type Ctx = {
+  theme: Theme;
+  mode: ThemeMode;            // user's explicit choice
+  resolved: "light" | "dark"; // what we actually render
+  setMode: (m: ThemeMode) => void;
+};
+
+const ThemeCtx = createContext<Ctx | null>(null);
+
+/// Wraps the app and provides a manual light/dark/system toggle that
+/// persists across launches in AsyncStorage.
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const system = useColorScheme();
+  const [mode, setModeState] = useState<ThemeMode>("system");
+
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then((v) => {
+      if (v === "light" || v === "dark" || v === "system") setModeState(v);
+    });
+  }, []);
+
+  function setMode(m: ThemeMode) {
+    setModeState(m);
+    AsyncStorage.setItem(STORAGE_KEY, m).catch(() => {});
+  }
+
+  const value = useMemo<Ctx>(() => {
+    const resolved: "light" | "dark" =
+      mode === "system" ? (system === "dark" ? "dark" : "light") : mode;
+    return { theme: palette[resolved], mode, resolved, setMode };
+  }, [mode, system]);
+
+  return React.createElement(ThemeCtx.Provider, { value }, children);
+}
+
+/// Returns the active palette. Backwards-compatible with existing call sites.
 export function useTheme(): Theme {
-  const scheme = useColorScheme();
-  return scheme === "dark" ? palette.dark : palette.light;
+  const ctx = useContext(ThemeCtx);
+  return ctx ? ctx.theme : palette.light;
+}
+
+/// Full theme context for components that need to read or change the mode.
+export function useThemeMode(): Ctx {
+  const ctx = useContext(ThemeCtx);
+  if (!ctx) {
+    return { theme: palette.light, mode: "system", resolved: "light", setMode: () => {} };
+  }
+  return ctx;
 }
 
 export const spacing = {

@@ -11,6 +11,7 @@ import { useAuth, useCan } from "@/lib/auth";
 import { api, UnitDetail } from "@/lib/api";
 import { Button } from "@/components/Button";
 import { Badge, Card } from "@/components/Card";
+import { QrTag } from "@/components/QrTag";
 import { useTheme, spacing } from "@/lib/theme";
 
 /// Per-unit detail page. Reached either by scanning a unit-scoped QR or by
@@ -106,11 +107,7 @@ export default function UnitDetailScreen() {
           <Card>
             <Text style={[styles.cardTitle, { color: t.text }]}>Tag</Text>
             <View style={{ alignItems: "center", marginTop: spacing.sm }}>
-              <Image
-                source={{ uri: primaryTag.qrUrl }}
-                style={{ width: 200, height: 200, backgroundColor: "#fff", borderRadius: 8 }}
-                resizeMode="contain"
-              />
+              <QrTag code={primaryTag.code} size={200} />
               <Text style={[styles.tagCode, { color: t.text }]}>{primaryTag.code}</Text>
             </View>
           </Card>
