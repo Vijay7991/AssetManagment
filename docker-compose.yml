@@ -26,8 +26,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      mail:
-        condition: service_started
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       ASPNETCORE_URLS: http://+:8080
@@ -39,9 +37,8 @@ services:
       Jwt__RefreshTtlDays: ${JWT_REFRESH_TTL_DAYS}
       RootAdmin__Email: ${ROOT_ADMIN_EMAIL:-}
       Storage__UploadsPath: /app/uploads
-      Smtp__Host: ${SMTP_HOST}
-      Smtp__Port: ${SMTP_PORT}
-      Smtp__From: ${SMTP_FROM}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      Resend__From: ${RESEND__FROM:-AssetHub <no-reply@mail.assethub.uk>}
       Cors__AllowedOrigins__0: "http://localhost:${WEB_PORT}"
       Cors__AllowedOrigins__1: "https://localhost"
     volumes:
@@ -63,13 +60,6 @@ services:
       INTERNAL_API_BASE_URL: http://api:8080
     ports:
       - "${WEB_PORT}:3000"
-
-  mail:
-    image: mailhog/mailhog:v1.0.1
-    restart: unless-stopped
-    ports:
-      - "${MAILHOG_UI_PORT}:8025"
-      - "${SMTP_HOST_PORT:-1025}:1025"
 
   caddy:
     image: caddy:2-alpine
