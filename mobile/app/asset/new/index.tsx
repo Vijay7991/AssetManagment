@@ -1,12 +1,13 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable,
+  ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useAuth, useCan } from "@/lib/auth";
 import {
   api, AssetDetail, AssetTypeRecord, Location,
@@ -45,12 +46,18 @@ export default function NewAssetScreen() {
   const [locationDetail, setLocationDetail] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [status, setStatus] = useState<typeof STATUSES[number]>("InService");
+  const [isUnitTrackedOverride, setIsUnitTrackedOverride] = useState<boolean | null>(null);
+  const [coverPhotoUri, setCoverPhotoUri] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const selectedType = useMemo(
     () => types.data?.find(x => x.id === assetTypeId),
     [types.data, assetTypeId]
   );
+
+  // Resolved flag: explicit override wins, otherwise fall back to the type's default.
+  const isUnitTracked = isUnitTrackedOverride ?? !!selectedType?.trackByUnit;
+  const quantityNum = Math.max(1, parseInt(quantity, 10) || 1);
 
   const create = useMutation({
     mutationFn: () => api.post<AssetDetail>("/api/assets", {
@@ -59,22 +66,53 @@ export default function NewAssetScreen() {
       description: description.trim() || null,
       locationId: locationId || null,
       locationDetail: locationDetail.trim() || null,
-      quantity: Math.max(1, parseInt(quantity, 10) || 1),
+      quantity: quantityNum,
       status,
       fieldValues: null,
       purchasePrice: null,
       purchasedOn: null,
       warrantyUntil: null,
-      isUnitTracked: null,
-      units: null,
+      isUnitTracked: isUnitTrackedOverride,
+      units: isUnitTracked
+        ? Array.from({ length: quantityNum }, () => ({
+            serialNumber: null,
+            warrantyUntil: null,
+          }))
+        : null,
     }, accessToken),
-    onSuccess: (asset) => {
+    onSuccess: async (asset) => {
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["asset-stats"] });
+      // Upload cover photo if one was selected
+      if (coverPhotoUri) {
+        try {
+          const name = coverPhotoUri.split("/").pop() || "photo.jpg";
+          const ext = name.split(".").pop()?.toLowerCase() || "jpg";
+          const type = ext === "png" ? "image/png" : "image/jpeg";
+          await api.upload(`/api/assets/${asset.id}/photos`, { uri: coverPhotoUri, name, type }, accessToken);
+          qc.invalidateQueries({ queryKey: ["asset", asset.id] });
+        } catch {
+          // Non-fatal — asset created, photo upload failed silently
+        }
+      }
       router.replace(`/asset/${asset.id}`);
     },
     onError: (e: any) => setErr(e?.message || "Could not create asset."),
   });
+
+  async function pickPhoto() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert("Permission needed", "Allow photo library access."); return; }
+    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.85 });
+    if (!r.canceled && r.assets?.length) setCoverPhotoUri(r.assets[0].uri);
+  }
+
+  async function takePhoto() {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) { Alert.alert("Permission needed", "Allow camera access."); return; }
+    const r = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 });
+    if (!r.canceled && r.assets?.length) setCoverPhotoUri(r.assets[0].uri);
+  }
 
   if (!canWrite) {
     return (
@@ -113,12 +151,6 @@ export default function NewAssetScreen() {
                 placeholder="Choose a type"
                 onChange={setAssetTypeId}
               />
-            )}
-            {selectedType?.trackByUnit && (
-              <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 4 }}>
-                This type tracks each instance as a separate unit with its own
-                barcode. Add units after creating from the asset's detail page.
-              </Text>
             )}
           </Field>
 
@@ -176,6 +208,65 @@ export default function NewAssetScreen() {
                 />
               </Field>
             </View>
+          </View>
+
+          {selectedType && (
+            <View style={[styles.unitCard, { borderColor: t.border, backgroundColor: t.surface }]}>
+              <View style={styles.unitRow}>
+                <View style={{ flex: 1, paddingRight: spacing.md }}>
+                  <Text style={{ color: t.text, fontSize: 14, fontWeight: "600" }}>
+                    Track each unit individually
+                  </Text>
+                  <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 4 }}>
+                    {isUnitTracked
+                      ? `Each of the ${quantityNum} unit${quantityNum === 1 ? "" : "s"} will get its own QR code and identity.`
+                      : "All units share one QR code and a single record."}
+                  </Text>
+                </View>
+                <Switch
+                  value={isUnitTracked}
+                  onValueChange={(v) => setIsUnitTrackedOverride(v)}
+                  trackColor={{ false: t.border, true: t.accent }}
+                />
+              </View>
+              {selectedType.trackByUnit && (
+                <Text style={{ color: t.textMuted, fontSize: 11, marginTop: spacing.sm }}>
+                  Default for {selectedType.name} is on. You can override it here.
+                </Text>
+              )}
+            </View>
+          )}
+
+          {/* Cover photo */}
+          <View style={[styles.photoCard, { borderColor: t.border, backgroundColor: t.surface }]}>
+            <Text style={{ color: t.text, fontSize: 13, fontWeight: "500", marginBottom: spacing.sm }}>
+              Cover photo (optional)
+            </Text>
+            {coverPhotoUri ? (
+              <View style={{ position: "relative" }}>
+                <Image source={{ uri: coverPhotoUri }} style={styles.photoPreview} />
+                <TouchableOpacity
+                  onPress={() => setCoverPhotoUri(null)}
+                  style={styles.photoRemove}>
+                  <Ionicons name="close-circle" size={22} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <TouchableOpacity
+                  onPress={takePhoto}
+                  style={[styles.photoBtn, { borderColor: t.border }]}>
+                  <Ionicons name="camera-outline" size={20} color={t.accent} />
+                  <Text style={{ color: t.accent, fontSize: 12, marginTop: 4 }}>Camera</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={pickPhoto}
+                  style={[styles.photoBtn, { borderColor: t.border }]}>
+                  <Ionicons name="image-outline" size={20} color={t.accent} />
+                  <Text style={{ color: t.accent, fontSize: 12, marginTop: 4 }}>Gallery</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           {err && (
@@ -296,5 +387,40 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  unitCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: spacing.md,
+  },
+  unitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  photoCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: spacing.md,
+  },
+  photoPreview: {
+    width: "100%",
+    height: 160,
+    borderRadius: 8,
+  },
+  photoRemove: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 12,
+  },
+  photoBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: spacing.md,
+    borderStyle: "dashed",
   },
 });

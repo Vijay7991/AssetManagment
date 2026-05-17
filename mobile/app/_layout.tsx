@@ -5,6 +5,8 @@ import { useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/lib/auth";
+import { ThemeProvider } from "@/lib/theme";
+import { BiometricGate } from "@/components/BiometricGate";
 
 export default function RootLayout() {
   const [qc] = useState(() => new QueryClient({
@@ -23,7 +25,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={qc}>
+          <ThemeProvider>
           <AuthProvider>
+            <BiometricGate>
             <StatusBar style="auto" />
             <Stack
               screenOptions={{ headerShown: false }}>
@@ -41,7 +45,9 @@ export default function RootLayout() {
                 name="asset/new/index"
                 options={{ headerShown: true, title: "New asset" }} />
             </Stack>
+            </BiometricGate>
           </AuthProvider>
+          </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

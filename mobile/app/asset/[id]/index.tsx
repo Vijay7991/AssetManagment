@@ -10,6 +10,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@/components/Button";
 import { Badge, Card, prettyStatus, statusVariant } from "@/components/Card";
+import { QrTag } from "@/components/QrTag";
+import { NewTicketModal } from "@/app/(tabs)/maintenance";
 import { useAuth, useCan } from "@/lib/auth";
 import { api, AssetDetail, Movement, UnitListItem } from "@/lib/api";
 import { useTheme, spacing } from "@/lib/theme";
@@ -22,8 +24,10 @@ export default function AssetDetailScreen() {
   const { accessToken } = useAuth();
   const canCheckout = useCan("assets:checkout");
   const canWrite = useCan("assets:write");
+  const canMaintenance = useCan("maintenance:write");
 
   const [movementForm, setMovementForm] = useState<null | { kind: "CheckOut" | "CheckIn" | "Move" }>(null);
+  const [showTicket, setShowTicket] = useState(false);
 
   const asset = useQuery({
     queryKey: ["asset", id],
@@ -162,6 +166,11 @@ export default function AssetDetailScreen() {
                       icon={<Ionicons name="navigate-outline" size={16} color={t.text} />}
                       onPress={() => setMovementForm({ kind: "Move" })} />
             )}
+            {canMaintenance && (
+              <Button title="New ticket" variant="outline" size="sm"
+                      icon={<Ionicons name="construct-outline" size={16} color={t.text} />}
+                      onPress={() => setShowTicket(true)} />
+            )}
           </View>
         )}
 
@@ -170,11 +179,7 @@ export default function AssetDetailScreen() {
           <Card>
             <Text style={[styles.cardTitle, { color: t.text }]}>Tag</Text>
             <View style={{ alignItems: "center", marginTop: spacing.sm }}>
-              <Image
-                source={{ uri: primaryTag.qrUrl }}
-                style={{ width: 200, height: 200, backgroundColor: "#fff", borderRadius: 8 }}
-                resizeMode="contain"
-              />
+              <QrTag code={primaryTag.code} size={200} />
               <Text style={[styles.tagCode, { color: t.text }]}>{primaryTag.code}</Text>
             </View>
           </Card>
@@ -284,6 +289,15 @@ export default function AssetDetailScreen() {
           ))}
         </Card>
       </ScrollView>
+
+      {showTicket && (
+        <NewTicketModal
+          assetId={a.id}
+          assetName={a.name}
+          onClose={() => setShowTicket(false)}
+          onDone={() => setShowTicket(false)}
+        />
+      )}
 
       {movementForm && (
         <MovementModal
