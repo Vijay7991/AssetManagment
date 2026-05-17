@@ -1,8 +1,8 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator, FlatList, Image, RefreshControl,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, FlatList, Image, Pressable, RefreshControl,
+  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -13,18 +13,29 @@ import { useTheme, spacing } from "@/lib/theme";
 import { Badge, prettyStatus, statusVariant } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 
+const STATUS_FILTERS = [
+  { value: "", label: "All" },
+  { value: "InService", label: "In Service" },
+  { value: "InStorage", label: "In Storage" },
+  { value: "InRepair", label: "In Repair" },
+  { value: "Retired", label: "Retired" },
+  { value: "Lost", label: "Lost" },
+] as const;
+
 export default function AssetsScreen() {
   const t = useTheme();
   const router = useRouter();
   const { accessToken } = useAuth();
   const canWrite = useCan("assets:write");
   const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const list = useQuery({
-    queryKey: ["assets", q],
+    queryKey: ["assets", q, statusFilter],
     queryFn: () => {
       const params = new URLSearchParams({ pageSize: "100" });
       if (q) params.set("q", q);
+      if (statusFilter) params.set("status", statusFilter);
       return api.get<Paged<AssetListItem>>(`/api/assets?${params}`, accessToken);
     },
     enabled: !!accessToken,
@@ -66,6 +77,32 @@ export default function AssetsScreen() {
         )}
       </View>
 
+      {/* Status filter chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}>
+        {STATUS_FILTERS.map(f => {
+          const active = statusFilter === f.value;
+          return (
+            <Pressable
+              key={f.value}
+              onPress={() => setStatusFilter(active ? "" : f.value)}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: active ? t.primary : t.surface,
+                  borderColor: active ? t.primary : t.border,
+                },
+              ]}>
+              <Text style={{ color: active ? t.primaryText : t.text, fontSize: 12, fontWeight: "600" }}>
+                {f.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
       {list.isLoading && (
         <View style={styles.center}>
           <ActivityIndicator color={t.accent} />
@@ -73,18 +110,24 @@ export default function AssetsScreen() {
       )}
 
       {list.data && list.data.items.length === 0 && (
-        <EmptyState
-          title="No assets match"
-          description={q ? "Try clearing the search box." : "Create your first asset from the web app."}
-          icon={<Ionicons name="cube-outline" size={48} color={t.textMuted} />}
-        />
+        <ScrollView
+          contentContainerStyle={{ flex: 1 }}
+          refreshControl={
+            <RefreshControl refreshing={list.isFetching} onRefresh={() => list.refetch()} tintColor={t.accent} />
+          }>
+          <EmptyState
+            title="No assets match"
+            description={q || statusFilter ? "Try clearing the search or filter." : "Create your first asset from the web app."}
+            icon={<Ionicons name="cube-outline" size={48} color={t.textMuted} />}
+          />
+        </ScrollView>
       )}
 
       {list.data && list.data.items.length > 0 && (
         <FlatList
           data={list.data.items}
           keyExtractor={(a) => a.id}
-          contentContainerStyle={{ paddingTop: spacing.md, paddingBottom: spacing.xxl }}
+          contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: spacing.xxl }}
           ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: t.border }} />}
           refreshControl={
             <RefreshControl refreshing={list.isFetching} onRefresh={() => list.refetch()} tintColor={t.accent} />
@@ -131,11 +174,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: "700" },
   subtitle: { fontSize: 13, marginTop: 4 },
   addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: "center", justifyContent: "center",
   },
   searchRow: {
     flexDirection: "row",
@@ -145,8 +185,20 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    marginBottom: spacing.sm,
   },
   searchInput: { flex: 1, fontSize: 15 },
+  filterRow: {
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
+    paddingTop: 2,
+  },
+  chip: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   row: {
     flexDirection: "row",

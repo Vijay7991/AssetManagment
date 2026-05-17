@@ -1,12 +1,13 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable,
-  ScrollView, StyleSheet, Switch, Text, TextInput, View,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable,
+  ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useAuth, useCan } from "@/lib/auth";
 import {
   api, AssetDetail, AssetTypeRecord, Location,
@@ -46,6 +47,7 @@ export default function NewAssetScreen() {
   const [quantity, setQuantity] = useState("1");
   const [status, setStatus] = useState<typeof STATUSES[number]>("InService");
   const [isUnitTrackedOverride, setIsUnitTrackedOverride] = useState<boolean | null>(null);
+  const [coverPhotoUri, setCoverPhotoUri] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const selectedType = useMemo(
@@ -78,13 +80,39 @@ export default function NewAssetScreen() {
           }))
         : null,
     }, accessToken),
-    onSuccess: (asset) => {
+    onSuccess: async (asset) => {
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["asset-stats"] });
+      // Upload cover photo if one was selected
+      if (coverPhotoUri) {
+        try {
+          const name = coverPhotoUri.split("/").pop() || "photo.jpg";
+          const ext = name.split(".").pop()?.toLowerCase() || "jpg";
+          const type = ext === "png" ? "image/png" : "image/jpeg";
+          await api.upload(`/api/assets/${asset.id}/photos`, { uri: coverPhotoUri, name, type }, accessToken);
+          qc.invalidateQueries({ queryKey: ["asset", asset.id] });
+        } catch {
+          // Non-fatal — asset created, photo upload failed silently
+        }
+      }
       router.replace(`/asset/${asset.id}`);
     },
     onError: (e: any) => setErr(e?.message || "Could not create asset."),
   });
+
+  async function pickPhoto() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert("Permission needed", "Allow photo library access."); return; }
+    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.85 });
+    if (!r.canceled && r.assets?.length) setCoverPhotoUri(r.assets[0].uri);
+  }
+
+  async function takePhoto() {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) { Alert.alert("Permission needed", "Allow camera access."); return; }
+    const r = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 });
+    if (!r.canceled && r.assets?.length) setCoverPhotoUri(r.assets[0].uri);
+  }
 
   if (!canWrite) {
     return (
@@ -208,6 +236,38 @@ export default function NewAssetScreen() {
               )}
             </View>
           )}
+
+          {/* Cover photo */}
+          <View style={[styles.photoCard, { borderColor: t.border, backgroundColor: t.surface }]}>
+            <Text style={{ color: t.text, fontSize: 13, fontWeight: "500", marginBottom: spacing.sm }}>
+              Cover photo (optional)
+            </Text>
+            {coverPhotoUri ? (
+              <View style={{ position: "relative" }}>
+                <Image source={{ uri: coverPhotoUri }} style={styles.photoPreview} />
+                <TouchableOpacity
+                  onPress={() => setCoverPhotoUri(null)}
+                  style={styles.photoRemove}>
+                  <Ionicons name="close-circle" size={22} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <TouchableOpacity
+                  onPress={takePhoto}
+                  style={[styles.photoBtn, { borderColor: t.border }]}>
+                  <Ionicons name="camera-outline" size={20} color={t.accent} />
+                  <Text style={{ color: t.accent, fontSize: 12, marginTop: 4 }}>Camera</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={pickPhoto}
+                  style={[styles.photoBtn, { borderColor: t.border }]}>
+                  <Ionicons name="image-outline" size={20} color={t.accent} />
+                  <Text style={{ color: t.accent, fontSize: 12, marginTop: 4 }}>Gallery</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
 
           {err && (
             <Card style={{ borderColor: t.danger, backgroundColor: "rgba(220,38,38,0.06)" }}>
@@ -336,5 +396,31 @@ const styles = StyleSheet.create({
   unitRow: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  photoCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: spacing.md,
+  },
+  photoPreview: {
+    width: "100%",
+    height: 160,
+    borderRadius: 8,
+  },
+  photoRemove: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 12,
+  },
+  photoBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: spacing.md,
+    borderStyle: "dashed",
   },
 });
