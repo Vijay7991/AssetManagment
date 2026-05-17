@@ -1,14 +1,14 @@
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
-  ActivityIndicator, FlatList, Image, Pressable, RefreshControl,
+  ActivityIndicator, FlatList, Image, Modal, Pressable, RefreshControl,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth, useCan } from "@/lib/auth";
-import { api, AssetListItem, Paged } from "@/lib/api";
+import { api, AssetListItem, Location, Paged } from "@/lib/api";
 import { useTheme, spacing } from "@/lib/theme";
 import { Badge, prettyStatus, statusVariant } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
@@ -25,21 +25,55 @@ const STATUS_FILTERS = [
 export default function AssetsScreen() {
   const t = useTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    status?: string;
+    warrantyExpiring?: string;
+    locationId?: string;
+  }>();
   const { accessToken } = useAuth();
   const canWrite = useCan("assets:write");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+  const [warrantyExpiring, setWarrantyExpiring] = useState(false);
+
+  // Sync filters from incoming route params (dashboard KPI taps land here with
+  // ?status=…, ?warrantyExpiring=true, etc.)
+  useEffect(() => {
+    if (params.status !== undefined) setStatusFilter(params.status || "");
+    if (params.warrantyExpiring !== undefined) setWarrantyExpiring(params.warrantyExpiring === "true");
+    if (params.locationId !== undefined) setLocationFilter(params.locationId || "");
+  }, [params.status, params.warrantyExpiring, params.locationId]);
+
+  const locations = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get<Location[]>("/api/locations", accessToken),
+    enabled: !!accessToken,
+  });
 
   const list = useQuery({
-    queryKey: ["assets", q, statusFilter],
+    queryKey: ["assets", q, statusFilter, locationFilter, warrantyExpiring],
     queryFn: () => {
-      const params = new URLSearchParams({ pageSize: "100" });
-      if (q) params.set("q", q);
-      if (statusFilter) params.set("status", statusFilter);
-      return api.get<Paged<AssetListItem>>(`/api/assets?${params}`, accessToken);
+      const p = new URLSearchParams({ pageSize: "100" });
+      if (q) p.set("q", q);
+      if (statusFilter) p.set("status", statusFilter);
+      if (locationFilter) p.set("locationId", locationFilter);
+      if (warrantyExpiring) p.set("warrantyExpiring", "true");
+      return api.get<Paged<AssetListItem>>(`/api/assets?${p}`, accessToken);
     },
     enabled: !!accessToken,
   });
+
+  const activeLocationName = locations.data?.find(l => l.id === locationFilter)?.name;
+  const hasActiveFilter = !!statusFilter || !!locationFilter || warrantyExpiring;
+
+  function clearAll() {
+    setStatusFilter("");
+    setLocationFilter("");
+    setWarrantyExpiring(false);
+    setQ("");
+  }
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["top", "bottom"]}>
@@ -103,6 +137,39 @@ export default function AssetsScreen() {
         })}
       </ScrollView>
 
+      {/* Secondary filters: location + warranty */}
+      <View style={styles.secondaryRow}>
+        <Pressable
+          onPress={() => setLocationPickerOpen(true)}
+          style={[styles.secondaryBtn, { borderColor: locationFilter ? t.accent : t.border, backgroundColor: t.surface }]}>
+          <Ionicons name="location-outline" size={14} color={locationFilter ? t.accent : t.textMuted} />
+          <Text style={{ color: locationFilter ? t.accent : t.text, fontSize: 12, fontWeight: "600", marginLeft: 4 }}
+                numberOfLines={1}>
+            {activeLocationName || "All locations"}
+          </Text>
+          <Ionicons name="chevron-down" size={12} color={t.textMuted} style={{ marginLeft: 2 }} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => setWarrantyExpiring(v => !v)}
+          style={[styles.secondaryBtn, {
+            borderColor: warrantyExpiring ? t.danger : t.border,
+            backgroundColor: warrantyExpiring ? t.danger + "18" : t.surface,
+          }]}>
+          <Ionicons name="alarm-outline" size={14} color={warrantyExpiring ? t.danger : t.textMuted} />
+          <Text style={{ color: warrantyExpiring ? t.danger : t.text, fontSize: 12, fontWeight: "600", marginLeft: 4 }}>
+            Warranty &lt; 30d
+          </Text>
+        </Pressable>
+
+        {hasActiveFilter && (
+          <Pressable onPress={clearAll} style={[styles.secondaryBtn, { borderColor: t.border, backgroundColor: t.surface }]}>
+            <Ionicons name="close" size={14} color={t.textMuted} />
+            <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: "600", marginLeft: 4 }}>Clear</Text>
+          </Pressable>
+        )}
+      </View>
+
       {list.isLoading && (
         <View style={styles.center}>
           <ActivityIndicator color={t.accent} />
@@ -117,7 +184,7 @@ export default function AssetsScreen() {
           }>
           <EmptyState
             title="No assets match"
-            description={q || statusFilter ? "Try clearing the search or filter." : "Create your first asset from the web app."}
+            description={hasActiveFilter || q ? "Try clearing the search or filter." : "Create your first asset to get started."}
             icon={<Ionicons name="cube-outline" size={48} color={t.textMuted} />}
           />
         </ScrollView>
@@ -159,6 +226,44 @@ export default function AssetsScreen() {
           )}
         />
       )}
+
+      {/* Location picker modal */}
+      <Modal visible={locationPickerOpen} transparent animationType="slide" onRequestClose={() => setLocationPickerOpen(false)}>
+        <Pressable style={styles.modalBg} onPress={() => setLocationPickerOpen(false)}>
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={[styles.modalSheet, { backgroundColor: t.background, borderColor: t.border }]}>
+            <View style={styles.modalHead}>
+              <Text style={{ color: t.text, fontSize: 16, fontWeight: "600" }}>Filter by location</Text>
+              <TouchableOpacity onPress={() => setLocationPickerOpen(false)}>
+                <Ionicons name="close" size={22} color={t.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 400 }}>
+              <Pressable
+                onPress={() => { setLocationFilter(""); setLocationPickerOpen(false); }}
+                style={[styles.locOpt, { borderBottomColor: t.border }]}>
+                <Text style={{ color: t.text, fontSize: 15 }}>All locations</Text>
+                {!locationFilter && <Ionicons name="checkmark" size={18} color={t.accent} />}
+              </Pressable>
+              {locations.data?.map(loc => (
+                <Pressable
+                  key={loc.id}
+                  onPress={() => { setLocationFilter(loc.id); setLocationPickerOpen(false); }}
+                  style={[styles.locOpt, { borderBottomColor: t.border }]}>
+                  <Text style={{ color: t.text, fontSize: 15 }}>{loc.name}</Text>
+                  {locationFilter === loc.id && <Ionicons name="checkmark" size={18} color={t.accent} />}
+                </Pressable>
+              ))}
+              {(!locations.data || locations.data.length === 0) && (
+                <Text style={{ color: t.textMuted, fontSize: 13, padding: spacing.lg, textAlign: "center" }}>
+                  No locations yet. Create them from the web app.
+                </Text>
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -190,7 +295,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15 },
   filterRow: {
     gap: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
     paddingTop: 2,
   },
   chip: {
@@ -198,6 +303,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
+  },
+  secondaryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    maxWidth: 200,
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   row: {
@@ -216,4 +336,28 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: "600" },
   rowSub: { fontSize: 12, marginTop: 2 },
   rowCode: { fontSize: 11, fontFamily: "monospace", marginTop: 2 },
+  modalBg: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderTopWidth: 1,
+    padding: spacing.lg,
+  },
+  modalHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  locOpt: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
 });
