@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<TenantMembership> Memberships => Set<TenantMembership>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<EmailVerificationToken> EmailVerificationTokens => Set<EmailVerificationToken>();
     public DbSet<TenantInvite> Invites => Set<TenantInvite>();
     public DbSet<AssetCategory> Categories => Set<AssetCategory>();
     public DbSet<AssetType> AssetTypes => Set<AssetType>();
@@ -66,6 +67,15 @@ public class AppDbContext : DbContext
             e.HasIndex(p => p.UserId);
             e.HasOne(p => p.User).WithMany(u => u.PasswordResets)
                 .HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── EmailVerificationToken ────────────────────────────────
+        b.Entity<EmailVerificationToken>(e =>
+        {
+            e.HasIndex(v => v.TokenHash).IsUnique();
+            e.HasIndex(v => v.UserId);
+            e.HasOne(v => v.User).WithMany()
+                .HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── Invite ────────────────────────────────────────────────

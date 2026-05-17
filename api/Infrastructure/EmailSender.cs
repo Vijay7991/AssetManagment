@@ -1,15 +1,14 @@
-using MailKit.Net.Smtp;
-using MimeKit;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace AssetHub.Api.Infrastructure;
 
-public class SmtpOptions
+public class ResendOptions
 {
-    public string Host { get; set; } = "localhost";
-    public int Port { get; set; } = 1025;
-    public string From { get; set; } = "no-reply@assethub.local";
-    public string? Username { get; set; }
-    public string? Password { get; set; }
+    public string ApiKey { get; set; } = "";
+    /// Full "From" header, e.g. "AssetHub <no-reply@mail.assethub.uk>"
+    public string From { get; set; } = "AssetHub <no-reply@mail.assethub.uk>";
 }
 
 public interface IEmailSender
@@ -17,37 +16,49 @@ public interface IEmailSender
     Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default);
 }
 
-public class SmtpEmailSender : IEmailSender
+public class ResendEmailSender : IEmailSender
 {
-    private readonly SmtpOptions _opts;
-    private readonly ILogger<SmtpEmailSender> _log;
+    readonly ResendOptions _opts;
+    readonly IHttpClientFactory _http;
+    readonly ILogger<ResendEmailSender> _log;
 
-    public SmtpEmailSender(SmtpOptions opts, ILogger<SmtpEmailSender> log)
+    public ResendEmailSender(ResendOptions opts, IHttpClientFactory http, ILogger<ResendEmailSender> log)
     {
         _opts = opts;
+        _http = http;
         _log = log;
     }
 
     public async Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(_opts.ApiKey))
+        {
+            _log.LogWarning("RESEND_API_KEY is not configured — skipping email to {To}", to);
+            return;
+        }
+
         try
         {
-            var msg = new MimeMessage();
-            msg.From.Add(MailboxAddress.Parse(_opts.From));
-            msg.To.Add(MailboxAddress.Parse(to));
-            msg.Subject = subject;
-            msg.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
+            using var client = _http.CreateClient("resend");
+            var payload = JsonSerializer.Serialize(new
+            {
+                from    = _opts.From,
+                to      = new[] { to },
+                subject = subject,
+                html    = htmlBody,
+            });
+            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("emails", content, ct);
 
-            using var smtp = new SmtpClient();
-            await smtp.ConnectAsync(_opts.Host, _opts.Port, MailKit.Security.SecureSocketOptions.None, ct);
-            if (!string.IsNullOrEmpty(_opts.Username))
-                await smtp.AuthenticateAsync(_opts.Username, _opts.Password, ct);
-            await smtp.SendAsync(msg, ct);
-            await smtp.DisconnectAsync(true, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                _log.LogWarning("Resend returned {Status} for {To}: {Body}", (int)response.StatusCode, to, body);
+            }
         }
         catch (Exception ex)
         {
-            // Don't fail the request because mail bounced — just log it.
+            // Best-effort — never fail the calling request because mail bounced.
             _log.LogWarning(ex, "Failed to send email to {To}", to);
         }
     }

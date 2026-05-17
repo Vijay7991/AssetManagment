@@ -152,13 +152,8 @@ public static class RootAdminEndpoints
         var baseUrl = $"{http.Scheme}://{http.Host}";
         var link = $"{baseUrl}/reset-password?token={plain}";
 
-        _ = mail.SendAsync(
-            user.Email,
-            "Password reset (AssetHub)",
-            $"<p>Hi {System.Net.WebUtility.HtmlEncode(user.DisplayName)},</p>" +
-            "<p>The AssetHub platform administrator initiated a password reset for your account.</p>" +
-            $"<p><a href=\"{link}\">Set a new password</a></p>" +
-            "<p>This link expires in 1 hour.</p>");
+        _ = mail.SendAsync(user.Email, "Password reset (AssetHub)",
+            EmailTemplates.AdminPasswordReset(user.DisplayName, "AssetHub Platform", link));
 
         return TypedResults.Ok(new RootResetResponse(link, expires));
     }

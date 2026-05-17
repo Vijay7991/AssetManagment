@@ -66,6 +66,19 @@ public class PasswordResetToken
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// Single-use token sent by email to prove the user owns the address.
+/// Generated on signup and re-sendable. Verified by the /api/auth/verify-email endpoint.
+public class EmailVerificationToken
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public User User { get; set; } = null!;
+    [MaxLength(200)] public string TokenHash { get; set; } = "";
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? ConsumedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public class TenantMembership
 {
     public Guid Id { get; set; } = Guid.NewGuid();
