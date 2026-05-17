@@ -28,6 +28,7 @@ public record RootTenantDto(
 
 public record RootUpdateActiveRequest(bool IsActive);
 public record RootResetResponse(string ResetLink, DateTimeOffset ExpiresAt);
+public record MailSettingsRequest(bool Enabled);
 
 // ── Endpoints ───────────────────────────────────────────────────────
 
@@ -46,6 +47,8 @@ public static class RootAdminEndpoints
         grp.MapPost("/users/{userId:guid}/reset-password", ResetPassword);
         grp.MapPut("/users/{userId:guid}/root", PromoteToRoot);
         grp.MapDelete("/users/{userId:guid}", DeleteUser);
+        grp.MapGet("/settings/mail", GetMailSettings);
+        grp.MapPut("/settings/mail", UpdateMailSettings);
     }
 
     static async Task<Results<Ok<List<RootUserDto>>, ForbidHttpResult>> ListUsers(
@@ -203,5 +206,23 @@ public static class RootAdminEndpoints
         db.Users.Remove(user);
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
+    }
+
+    // ── Mail delivery toggle ──────────────────────────────────────────────
+
+    static async Task<Results<Ok<MailSettingsDto>, ForbidHttpResult>> GetMailSettings(
+        ICurrentUser cu, IMailSettings mailSettings, CancellationToken ct)
+    {
+        if (!cu.IsRootAdmin) return TypedResults.Forbid();
+        return TypedResults.Ok(await mailSettings.GetAsync(ct));
+    }
+
+    static async Task<Results<Ok<MailSettingsDto>, ForbidHttpResult>> UpdateMailSettings(
+        MailSettingsRequest req, ICurrentUser cu, IMailSettings mailSettings, CancellationToken ct)
+    {
+        if (!cu.IsRootAdmin) return TypedResults.Forbid();
+        if (cu.UserId is not Guid uid) return TypedResults.Forbid();
+        await mailSettings.SetEnabledAsync(req.Enabled, uid, ct);
+        return TypedResults.Ok(await mailSettings.GetAsync(ct));
     }
 }

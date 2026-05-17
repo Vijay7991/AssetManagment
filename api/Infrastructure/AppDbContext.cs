@@ -7,6 +7,7 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
     public DbSet<TenantMembership> Memberships => Set<TenantMembership>();
@@ -28,6 +29,12 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // ── SystemSetting ─────────────────────────────────────────
+        b.Entity<SystemSetting>(e =>
+        {
+            e.HasKey(s => s.Key);
+        });
+
         // ── Tenant ────────────────────────────────────────────────
         b.Entity<Tenant>(e =>
         {

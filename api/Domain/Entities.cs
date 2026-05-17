@@ -4,6 +4,17 @@ using System.Text.Json;
 
 namespace AssetHub.Api.Domain;
 
+/// Generic key-value store for platform-level operator settings.
+/// Currently used for the mail-enabled toggle; extend as needed.
+public class SystemSetting
+{
+    [Key]
+    [MaxLength(80)]  public string Key { get; set; } = "";
+    [MaxLength(500)] public string Value { get; set; } = "";
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public Guid? UpdatedByUserId { get; set; }
+}
+
 // ─── Tenancy ─────────────────────────────────────────────────────────
 
 public class Tenant

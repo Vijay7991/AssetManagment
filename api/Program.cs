@@ -83,6 +83,7 @@ builder.Services.AddHttpClient("resend", c =>
     c.DefaultRequestHeaders.Authorization =
         new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", resendOpts.ApiKey);
 });
+builder.Services.AddSingleton<IMailSettings, MailSettingsService>();
 builder.Services.AddSingleton<IEmailSender, ResendEmailSender>();
 builder.Services.AddSingleton<IMailHealth, MailHealth>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();

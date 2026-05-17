@@ -20,12 +20,18 @@ public class ResendEmailSender : IEmailSender
 {
     readonly ResendOptions _opts;
     readonly IHttpClientFactory _http;
+    readonly IMailSettings _mailSettings;
     readonly ILogger<ResendEmailSender> _log;
 
-    public ResendEmailSender(ResendOptions opts, IHttpClientFactory http, ILogger<ResendEmailSender> log)
+    public ResendEmailSender(
+        ResendOptions opts,
+        IHttpClientFactory http,
+        IMailSettings mailSettings,
+        ILogger<ResendEmailSender> log)
     {
         _opts = opts;
         _http = http;
+        _mailSettings = mailSettings;
         _log = log;
     }
 
@@ -34,6 +40,12 @@ public class ResendEmailSender : IEmailSender
         if (string.IsNullOrWhiteSpace(_opts.ApiKey))
         {
             _log.LogWarning("RESEND_API_KEY is not configured — skipping email to {To}", to);
+            return;
+        }
+
+        if (!await _mailSettings.IsEnabledAsync(ct))
+        {
+            _log.LogDebug("Email delivery is disabled by admin — skipping email to {To}", to);
             return;
         }
 
