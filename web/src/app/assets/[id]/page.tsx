@@ -11,7 +11,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/card";
 import {
   ArrowLeft, ArrowRight, Camera, History, MapPin, Pencil, Printer,
-  Trash2, UserCheck, UserMinus, Wrench, X,
+  Trash2, UserCheck, UserMinus, Wrench, X, Hash,
 } from "lucide-react";
 import { formatDate, formatDateTime, relativeTime } from "@/lib/utils";
 import { StatusBadge } from "@/components/status";
@@ -27,6 +27,7 @@ export default function AssetDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [movementForm, setMovementForm] = useState<null | { kind: "CheckOut" | "CheckIn" | "Move" }>(null);
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
 
   const asset = useQuery({
     queryKey: ["asset", params.id],
@@ -107,8 +108,8 @@ export default function AssetDetailPage() {
               </Link>
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="mr-2 h-4 w-4" /> Print label
+          <Button variant="outline" size="sm" onClick={() => setShowPrintDialog(true)}>
+            <Printer className="mr-2 h-4 w-4" /> Print labels
           </Button>
           {canWrite && (
             <Button variant="destructive" size="sm" onClick={() => setConfirmDel(true)}>
@@ -130,6 +131,16 @@ export default function AssetDetailPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {showPrintDialog && (
+        <PrintLabelDialog
+          assetId={params.id}
+          assetName={a.name}
+          quantity={a.quantity || 1}
+          hasTags={a.tags.some(t => t.status === "Active")}
+          onClose={() => setShowPrintDialog(false)}
+        />
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -333,6 +344,74 @@ export default function AssetDetailPage() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PrintLabelDialog({ assetId, assetName, quantity, hasTags, onClose }: {
+  assetId: string;
+  assetName: string;
+  quantity: number;
+  hasTags: boolean;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [count, setCount] = useState(Math.max(1, quantity));
+
+  function handlePrint() {
+    onClose();
+    router.push(`/print/${assetId}?count=${count}`);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 print-hide"
+         onClick={onClose}>
+      <Card className="w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Printer className="h-5 w-5" /> Print QR labels
+          </CardTitle>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!hasTags && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              This asset has no active QR tag. Generate one first using the "New tag" button.
+            </p>
+          )}
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <span className="font-medium">{assetName}</span>
+            {quantity > 1 && (
+              <span className="ml-2 text-muted-foreground">· {quantity} units</span>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="lbl-count" className="flex items-center gap-1.5">
+              <Hash className="h-3.5 w-3.5" /> Number of labels to print
+            </Label>
+            <Input
+              id="lbl-count"
+              type="number"
+              min={1}
+              max={200}
+              value={count}
+              onChange={e => setCount(Math.max(1, Math.min(200, parseInt(e.target.value) || 1)))}
+            />
+            {quantity > 1 && (
+              <p className="text-xs text-muted-foreground">
+                Tip: print {quantity} labels — one for each unit.
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={handlePrint} disabled={!hasTags}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print {count} label{count !== 1 ? "s" : ""}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

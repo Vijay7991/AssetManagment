@@ -55,9 +55,153 @@
   }
 }
 
-/* Print stylesheet for QR label sheets */
+/* ── Print stylesheet ─────────────────────────────────────────────── */
+
+/* Screen: label grid is shown as a preview on the dedicated print page */
+.print-label-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 16px;
+  background: white;
+}
+
+.print-label-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 12px 8px;
+  background: white;
+  text-align: center;
+}
+
+.print-label-qr {
+  width: 120px;
+  height: 120px;
+  display: block;
+  background: white;
+}
+
+.print-label-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #111;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.print-label-code {
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #555;
+}
+
+.print-label-location {
+  font-size: 9px;
+  color: #777;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media print {
-  body { background: white !important; }
-  .print-hide { display: none !important; }
-  .print-sheet { padding: 0; margin: 0; }
+  /* Guarantee exact color reproduction — required for QR codes */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Force white background everywhere, remove background images */
+  html, body {
+    background: white !important;
+    background-image: none !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Override dark-mode CSS variables so cards/inputs print white */
+  :root, .dark {
+    --background: 0 0% 100% !important;
+    --foreground: 0 0% 5% !important;
+    --card: 0 0% 100% !important;
+    --card-foreground: 0 0% 5% !important;
+    --border: 0 0% 80% !important;
+    --muted-foreground: 0 0% 40% !important;
+  }
+
+  /* Hide app chrome */
+  aside,
+  header,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Remove sidebar left margin so content fills the full page width */
+  .md\:ml-64 {
+    margin-left: 0 !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Label grid — optimised for standard 3-column label sheets */
+  .print-label-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, 60mm);
+    gap: 5mm;
+    padding: 8mm;
+    background: white;
+  }
+
+  .print-label-card {
+    width: 60mm;
+    border: 0.4pt solid #999 !important;
+    border-radius: 2pt;
+    padding: 3mm;
+    gap: 2mm;
+    background: white !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-label-qr {
+    width: 54mm !important;
+    height: 54mm !important;
+    background: white !important;
+  }
+
+  .print-label-name {
+    font-size: 8pt;
+    max-width: 56mm;
+    color: #000 !important;
+  }
+
+  .print-label-code {
+    font-size: 7pt;
+    color: #333 !important;
+  }
+
+  .print-label-location {
+    font-size: 6.5pt;
+    color: #555 !important;
+    max-width: 56mm;
+  }
+
+  /* Legacy single-label print (asset detail page direct print) */
+  .print-sheet {
+    padding: 0;
+    margin: 0;
+    border: none !important;
+    box-shadow: none !important;
+  }
 }
