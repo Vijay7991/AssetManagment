@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, useCan } from "@/lib/auth-context";
 import { api, Category } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { FolderTree, Plus, Trash2 } from "lucide-react";
 
 export default function CategoriesPage() {
   const { accessToken } = useAuth();
+  const canWrite = useCan("catalog:write");
   const qc = useQueryClient();
   const [form, setForm] = useState({ name: "", parentId: "", icon: "", color: "" });
   const [err, setErr] = useState<string | null>(null);
@@ -45,8 +46,8 @@ export default function CategoriesPage() {
         <p className="text-sm text-muted-foreground">Organize assets into groups.</p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className={`grid gap-4 ${canWrite ? "lg:grid-cols-3" : ""}`}>
+        <Card className={canWrite ? "lg:col-span-2" : ""}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FolderTree className="h-5 w-5" /> All categories
@@ -65,9 +66,11 @@ export default function CategoriesPage() {
                       {c.parentId && <span className="text-muted-foreground">↳ </span>}
                       {c.name}
                     </span>
-                    <Button size="icon" variant="ghost" onClick={() => del.mutate(c.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canWrite && (
+                      <Button size="icon" variant="ghost" onClick={() => del.mutate(c.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -75,7 +78,7 @@ export default function CategoriesPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        {canWrite && <Card>
           <CardHeader>
             <CardTitle>Add category</CardTitle>
           </CardHeader>
@@ -107,7 +110,7 @@ export default function CategoriesPage() {
               </Button>
             </form>
           </CardContent>
-        </Card>
+        </Card>}
       </div>
     </div>
   );

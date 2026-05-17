@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, useCan } from "@/lib/auth-context";
 import { api, AssetTypeRecord, Category, FieldSchemaItem } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -12,7 +12,18 @@ import { Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
 
 export default function AssetTypesPage() {
   const { accessToken } = useAuth();
+  const canAccess = useCan("catalog:write");
   const qc = useQueryClient();
+
+  if (!canAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
+        <TagIcon className="h-10 w-10 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Access restricted</h2>
+        <p className="text-sm text-muted-foreground">You need catalog management permission to view this page.</p>
+      </div>
+    );
+  }
   const [form, setForm] = useState({ name: "", categoryId: "" });
   const [fields, setFields] = useState<FieldSchemaItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
