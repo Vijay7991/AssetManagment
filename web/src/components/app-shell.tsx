@@ -15,16 +15,16 @@ import {
   Wrench, Bell, MapPin, Shield,
 } from "lucide-react";
 
-const NAV: { label: string; href: string; icon: typeof LayoutDashboard; rootOnly?: boolean }[] = [
+const NAV: { label: string; href: string; icon: typeof LayoutDashboard; rootOnly?: boolean; permission?: string }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Assets", href: "/assets", icon: Boxes },
   { label: "Scan", href: "/scan", icon: ScanLine },
   { label: "Maintenance", href: "/maintenance", icon: Wrench },
   { label: "Activity", href: "/activity", icon: Activity },
-  { label: "Locations", href: "/locations", icon: MapPin },
-  { label: "Categories", href: "/categories", icon: FolderTree },
-  { label: "Asset Types", href: "/asset-types", icon: TagIcon },
-  { label: "Members", href: "/members", icon: Users },
+  { label: "Locations", href: "/locations", icon: MapPin, permission: "catalog:write" },
+  { label: "Categories", href: "/categories", icon: FolderTree, permission: "catalog:write" },
+  { label: "Asset Types", href: "/asset-types", icon: TagIcon, permission: "catalog:write" },
+  { label: "Members", href: "/members", icon: Users, permission: "members:write" },
   { label: "Settings", href: "/settings", icon: Settings },
   // Only visible to platform-level root admins — guarded both here and server-side.
   { label: "Admin", href: "/admin", icon: Shield, rootOnly: true },
@@ -66,7 +66,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onSelect={async (id) => { await switchTenant(id); setSidebarOpen(false); }}
         />
         <nav className="flex flex-col gap-1 p-2">
-          {NAV.filter(item => !item.rootOnly || user.isRootAdmin).map(({ label, href, icon: Icon }) => {
+          {NAV.filter(item => {
+            if (item.rootOnly && !user.isRootAdmin) return false;
+            if (item.permission && !activeTenant?.permissions?.includes(item.permission)) return false;
+            return true;
+          }).map(({ label, href, icon: Icon }) => {
             const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
             return (
               <Link key={href} href={href} onClick={() => setSidebarOpen(false)}

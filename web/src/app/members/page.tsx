@@ -41,6 +41,16 @@ export default function MembersPage() {
   const { accessToken, activeTenant, user } = useAuth();
   const canManage = useCan("members:write");
   const qc = useQueryClient();
+
+  if (!canManage) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-2 text-center">
+        <Users className="h-10 w-10 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Access restricted</h2>
+        <p className="text-sm text-muted-foreground">You need member management permission to view this page.</p>
+      </div>
+    );
+  }
   // Channel defaults to WhatsApp only if mail is down — initial render uses
   // Email and we flip it once the probe answers.
   const [form, setForm] = useState({ email: "", role: "Member", phone: "", channel: "Email" });
