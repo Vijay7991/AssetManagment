@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<AssetCategory> Categories => Set<AssetCategory>();
     public DbSet<AssetType> AssetTypes => Set<AssetType>();
     public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetUnit> AssetUnits => Set<AssetUnit>();
     public DbSet<AssetTag> AssetTags => Set<AssetTag>();
     public DbSet<AssetPhoto> AssetPhotos => Set<AssetPhoto>();
     public DbSet<AssetMovement> AssetMovements => Set<AssetMovement>();
@@ -115,13 +116,35 @@ public class AppDbContext : DbContext
             e.HasIndex(l => l.IsActive);
         });
 
+        // ── AssetUnit ─────────────────────────────────────────────
+        b.Entity<AssetUnit>(e =>
+        {
+            e.HasIndex(u => new { u.TenantId, u.AssetId });
+            e.HasIndex(u => new { u.TenantId, u.Status });
+            // Search-by-IMEI/serial path — single tenant-scoped index is fine.
+            e.HasIndex(u => new { u.TenantId, u.SerialNumber });
+            e.HasIndex(u => u.DeletedAt);
+            e.HasOne(u => u.Asset).WithMany(a => a.Units)
+                .HasForeignKey(u => u.AssetId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(u => u.Location).WithMany()
+                .HasForeignKey(u => u.LocationId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(u => u.AssignedToUser).WithMany()
+                .HasForeignKey(u => u.AssignedToUserId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(u => u.PurchasePrice).HasPrecision(18, 2);
+        });
+
         // ── AssetTag ──────────────────────────────────────────────
         b.Entity<AssetTag>(e =>
         {
             e.HasIndex(t => new { t.TenantId, t.Code }).IsUnique();
             e.HasIndex(t => t.AssetId);
+            e.HasIndex(t => t.UnitId);
             e.HasOne(t => t.Asset).WithMany(a => a.Tags)
                 .HasForeignKey(t => t.AssetId).OnDelete(DeleteBehavior.Cascade);
+            // SetNull (not Cascade) so soft-deleting a unit leaves the tag row
+            // behind for audit history — we just clear the link.
+            e.HasOne(t => t.Unit).WithMany(u => u.Tags)
+                .HasForeignKey(t => t.UnitId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── AssetPhoto ────────────────────────────────────────────
@@ -136,8 +159,12 @@ public class AppDbContext : DbContext
         b.Entity<AssetMovement>(e =>
         {
             e.HasIndex(m => new { m.TenantId, m.AssetId, m.PerformedAt });
+            e.HasIndex(m => new { m.TenantId, m.UnitId, m.PerformedAt });
             e.HasOne(m => m.Asset).WithMany(a => a.Movements)
                 .HasForeignKey(m => m.AssetId).OnDelete(DeleteBehavior.Cascade);
+            // SetNull so a deleted unit doesn't take its movement history with it.
+            e.HasOne(m => m.Unit).WithMany(u => u.Movements)
+                .HasForeignKey(m => m.UnitId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── AuditEvent ────────────────────────────────────────────

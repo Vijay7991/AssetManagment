@@ -39,10 +39,35 @@ public static class TagEndpoints
         return Results.Content(svg, "image/svg+xml");
     }
 
-    /// Scan lookup. Returns the asset detail for a given tag code, scoped to the
-    /// caller's tenant. 404 if the code doesn't exist or belongs to another tenant
-    /// (don't leak existence).
-    static async Task<Results<Ok<AssetDetailDto>, NotFound>> Scan(
+    /// Scan response — wraps either an asset (whole-asset tag) or a unit (unit-
+    /// scoped tag). The client renders accordingly: scanning a unit barcode
+    /// should jump straight to that physical phone's page, not the parent.
+    public record ScanResult(
+        string Kind,                         // "Asset" or "Unit"
+        AssetDetailDto? Asset,
+        UnitScanDto? Unit);
+
+    public record UnitScanDto(
+        Guid Id,
+        Guid AssetId,
+        string AssetName,
+        int UnitNumber,
+        string? SerialNumber,
+        string Status,
+        Guid? LocationId,
+        string? LocationName,
+        string? LocationDetail,
+        DateOnly? WarrantyUntil,
+        Guid? AssignedToUserId,
+        string? AssignedToName,
+        string Code);
+
+    /// Scan lookup. Returns the asset OR unit detail for a given tag code,
+    /// scoped to the caller's tenant. 404 if the code doesn't exist or belongs
+    /// to another tenant (don't leak existence). When the tag is unit-scoped,
+    /// the client routes the user to /assets/{assetId}/units/{unitId} rather
+    /// than the parent asset page.
+    static async Task<Results<Ok<ScanResult>, NotFound>> Scan(
         string code, ICurrentUser cu, AppDbContext db, HttpRequest http, CancellationToken ct)
     {
         var tag = await db.AssetTags
@@ -51,6 +76,9 @@ public static class TagEndpoints
             .Include(t => t.Asset).ThenInclude(a => a.Tags)
             .Include(t => t.Asset).ThenInclude(a => a.Photos)
             .Include(t => t.Asset).ThenInclude(a => a.AssignedToUser)
+            .Include(t => t.Asset).ThenInclude(a => a.Units)
+            .Include(t => t.Unit!).ThenInclude(u => u.Location)
+            .Include(t => t.Unit!).ThenInclude(u => u.AssignedToUser)
             .FirstOrDefaultAsync(t =>
                 t.Code == code &&
                 t.TenantId == cu.TenantId &&
@@ -58,7 +86,25 @@ public static class TagEndpoints
                 t.Asset.DeletedAt == null, ct);
         if (tag is null) return TypedResults.NotFound();
 
-        return TypedResults.Ok(MapAssetDetail(tag.Asset, http));
+        if (tag.UnitId.HasValue && tag.Unit is not null && tag.Unit.DeletedAt == null)
+        {
+            var u = tag.Unit;
+            return TypedResults.Ok(new ScanResult(
+                Kind: "Unit",
+                Asset: null,
+                Unit: new UnitScanDto(
+                    u.Id, u.AssetId, tag.Asset.Name, u.UnitNumber,
+                    u.SerialNumber, u.Status.ToString(),
+                    u.LocationId, u.Location?.Name, u.LocationDetail,
+                    u.WarrantyUntil,
+                    u.AssignedToUserId, u.AssignedToUser?.DisplayName,
+                    tag.Code)));
+        }
+
+        return TypedResults.Ok(new ScanResult(
+            Kind: "Asset",
+            Asset: MapAssetDetail(tag.Asset, http),
+            Unit: null));
     }
 
     static async Task<Results<Ok<TagDto>, NotFound, ForbidHttpResult>> CreateForAsset(
@@ -133,15 +179,21 @@ public static class TagEndpoints
     static AssetDetailDto MapAssetDetail(Asset a, HttpRequest http)
     {
         var baseUrl = $"{http.Scheme}://{http.Host}";
+        var liveUnits = a.Units.Where(u => u.DeletedAt == null).ToList();
+        var unitCount = liveUnits.Count;
+        var availableCount = liveUnits.Count(u => u.AssignedToUserId == null);
+        var displayQty = a.IsUnitTracked ? unitCount : a.Quantity;
+
         return new AssetDetailDto(
             a.Id, a.Name, a.Description,
             a.LocationId, a.Location?.Name, a.LocationDetail,
-            a.Quantity, a.Status.ToString(),
+            displayQty, a.Status.ToString(),
             a.AssetTypeId, a.AssetType.Name, a.AssetType.CategoryId, a.AssetType.Category.Name,
             a.FieldValues?.RootElement,
             a.PurchasePrice, a.PurchasedOn, a.WarrantyUntil,
             a.AssignedToUserId, a.AssignedToUser?.DisplayName,
-            a.Tags.Select(t => new TagDto(
+            a.IsUnitTracked, unitCount, availableCount,
+            a.Tags.Where(t => t.UnitId == null).Select(t => new TagDto(
                 t.Id, t.Code, t.Format, t.Status.ToString(), t.CreatedAt,
                 $"{baseUrl}/api/tags/{t.Code}/qr.png")).ToList(),
             a.Photos.Select(p => new PhotoDto(

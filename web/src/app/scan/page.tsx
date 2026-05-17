@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { api, AssetDetail } from "@/lib/api";
+import { api, ScanResult } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,7 @@ export default function ScanPage() {
   const [scannerOn, setScannerOn] = useState(false);
   const [manualCode, setManualCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [lastScan, setLastScan] = useState<AssetDetail | null>(null);
+  const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const lastCodeRef = useRef<{ code: string; at: number } | null>(null);
 
   // Lazy-load zxing only when scanner starts
@@ -71,11 +71,15 @@ export default function ScanPage() {
     const code = extractCode(text);
     if (!code) return;
     try {
-      const asset = await api.get<AssetDetail>(`/tags/scan/${code}`, accessToken);
-      setLastScan(asset);
+      const result = await api.get<ScanResult>(`/tags/scan/${code}`, accessToken);
+      setLastScan(result);
       setError(null);
-      // Auto-navigate after a brief preview
-      setTimeout(() => router.push(`/assets/${asset.id}`), 500);
+      // Route to the unit page when the tag is unit-scoped, otherwise the
+      // asset page. Brief delay lets the user see the match preview first.
+      const path = result.kind === "Unit"
+        ? `/assets/${result.unit.assetId}/units/${result.unit.id}`
+        : `/assets/${result.asset.id}`;
+      setTimeout(() => router.push(path), 500);
     } catch (e: any) {
       if (e?.status === 404) setError(`No asset matches code "${code}" in this workspace.`);
       else setError(e?.message || "Lookup failed.");
@@ -120,9 +124,18 @@ export default function ScanPage() {
             )}
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {lastScan && (
+          {lastScan && lastScan.kind === "Asset" && (
             <div className="rounded-md border bg-muted/50 p-3 text-sm">
-              Found: <Link href={`/assets/${lastScan.id}`} className="font-medium underline">{lastScan.name}</Link>
+              Found asset: <Link href={`/assets/${lastScan.asset.id}`} className="font-medium underline">{lastScan.asset.name}</Link>
+            </div>
+          )}
+          {lastScan && lastScan.kind === "Unit" && (
+            <div className="rounded-md border bg-muted/50 p-3 text-sm">
+              Found unit:{" "}
+              <Link href={`/assets/${lastScan.unit.assetId}/units/${lastScan.unit.id}`} className="font-medium underline">
+                {lastScan.unit.assetName} #{lastScan.unit.unitNumber}
+                {lastScan.unit.serialNumber && <span className="font-mono"> · {lastScan.unit.serialNumber}</span>}
+              </Link>
             </div>
           )}
         </CardContent>

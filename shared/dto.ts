@@ -75,6 +75,12 @@ export type AssetTypeRecord = {
   categoryId: string;
   name: string;
   icon?: string;
+  /**
+   * Default for new assets of this type: spawn one AssetUnit per quantity so
+   * each physical instance has its own identity, barcode, and check-out lifecycle.
+   * Per-asset override is supplied at create time via AssetCreateRequest.isUnitTracked.
+   */
+  trackByUnit?: boolean;
   fieldSchema?: FieldSchemaItem[];
 };
 
@@ -145,10 +151,73 @@ export type AssetDetail = {
   warrantyUntil: string | null;
   assignedToUserId: string | null;
   assignedToName: string | null;
+  /** When true, each physical unit lives in `units` with its own identity + tag + checkout state. */
+  isUnitTracked: boolean;
+  unitCount: number;
+  availableUnitCount: number;
   tags: Tag[];
   photos: Photo[];
   createdAt: string;
   updatedAt: string;
+};
+
+// ── Units ────────────────────────────────────────────────────────────
+
+export type UnitListItem = {
+  id: string;
+  unitNumber: number;
+  serialNumber: string | null;
+  status: string;
+  locationId: string | null;
+  locationName: string | null;
+  locationDetail: string | null;
+  warrantyUntil: string | null;
+  assignedToUserId: string | null;
+  assignedToName: string | null;
+  primaryTagCode: string | null;
+  createdAt: string;
+};
+
+export type UnitDetail = {
+  id: string;
+  assetId: string;
+  assetName: string;
+  unitNumber: number;
+  serialNumber: string | null;
+  status: string;
+  locationId: string | null;
+  locationName: string | null;
+  locationDetail: string | null;
+  fieldValues: Record<string, unknown> | null;
+  purchasePrice: number | null;
+  purchasedOn: string | null;
+  warrantyUntil: string | null;
+  assignedToUserId: string | null;
+  assignedToName: string | null;
+  tags: Tag[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Wrapper returned by /tags/scan/{code}; client routes based on `kind`. */
+export type ScanResult =
+  | { kind: "Asset"; asset: AssetDetail; unit: null }
+  | { kind: "Unit"; asset: null; unit: UnitScanResult };
+
+export type UnitScanResult = {
+  id: string;
+  assetId: string;
+  assetName: string;
+  unitNumber: number;
+  serialNumber: string | null;
+  status: string;
+  locationId: string | null;
+  locationName: string | null;
+  locationDetail: string | null;
+  warrantyUntil: string | null;
+  assignedToUserId: string | null;
+  assignedToName: string | null;
+  code: string;
 };
 
 // ── Operational ──────────────────────────────────────────────────────

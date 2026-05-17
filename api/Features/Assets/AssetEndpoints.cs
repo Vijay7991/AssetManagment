@@ -38,6 +38,9 @@ public record AssetDetailDto(
     DateOnly? WarrantyUntil,
     Guid? AssignedToUserId,
     string? AssignedToName,
+    bool IsUnitTracked,
+    int UnitCount,
+    int AvailableUnitCount,
     IReadOnlyList<TagDto> Tags,
     IReadOnlyList<PhotoDto> Photos,
     DateTimeOffset CreatedAt,
@@ -45,6 +48,14 @@ public record AssetDetailDto(
 
 public record TagDto(Guid Id, string Code, string Format, string Status, DateTimeOffset CreatedAt, string QrUrl);
 public record PhotoDto(Guid Id, string Url, bool IsCover, long SizeBytes);
+
+/// One row in the optional inline-grid that lets the operator fill in identity
+/// fields for every unit at create time. Any of these may be null/empty — the
+/// system will still spawn the unit and let the user fill in the rest later.
+public record UnitSeed(
+    string? SerialNumber,
+    DateOnly? WarrantyUntil,
+    JsonElement? FieldValues);
 
 public record AssetCreateRequest(
     string Name,
@@ -57,7 +68,14 @@ public record AssetCreateRequest(
     JsonElement? FieldValues,
     decimal? PurchasePrice,
     DateOnly? PurchasedOn,
-    DateOnly? WarrantyUntil);
+    DateOnly? WarrantyUntil,
+    /// Overrides AssetType.TrackByUnit for this asset. Null = inherit the type's default.
+    bool? IsUnitTracked,
+    /// Optional per-unit identity. When provided and unit tracking is on, the
+    /// system uses these to seed each unit's SerialNumber/WarrantyUntil/Fields.
+    /// Length doesn't have to match Quantity — extra rows are ignored, missing
+    /// rows get a blank unit.
+    IReadOnlyList<UnitSeed>? Units);
 
 public record AssetUpdateRequest(
     string Name,
@@ -128,7 +146,11 @@ public static class AssetEndpoints
                 a.LocationId, LocationName = a.Location != null ? a.Location.Name : null,
                 a.LocationDetail, a.CreatedAt,
                 Cover = a.Photos.Where(p => p.IsCover).Select(p => p.Id).FirstOrDefault(),
-                FirstTag = a.Tags.Where(t => t.Status == AssetTagStatus.Active).Select(t => t.Code).FirstOrDefault(),
+                // Only asset-level tags here — unit tags belong to specific units
+                // and surfacing one in the parent list is misleading.
+                FirstTag = a.Tags
+                    .Where(t => t.Status == AssetTagStatus.Active && t.UnitId == null)
+                    .Select(t => t.Code).FirstOrDefault(),
             })
             .ToListAsync(ct);
 
@@ -152,6 +174,7 @@ public static class AssetEndpoints
             .Include(a => a.Tags)
             .Include(a => a.Photos)
             .Include(a => a.AssignedToUser)
+            .Include(a => a.Units)
             .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
         if (asset is null) return TypedResults.NotFound();
 
@@ -170,6 +193,7 @@ public static class AssetEndpoints
         if (assetType is null) return TypedResults.BadRequest("Asset type not found.");
 
         var status = Enum.TryParse<AssetStatus>(req.Status, true, out var s) ? s : AssetStatus.InService;
+        var qty = req.Quantity > 0 ? req.Quantity : 1;
 
         // Validate location belongs to this tenant if provided
         if (req.LocationId.HasValue)
@@ -179,6 +203,11 @@ public static class AssetEndpoints
             if (!locExists) return TypedResults.BadRequest("Location not found in this tenant.");
         }
 
+        // Unit tracking: caller can override per-asset; otherwise fall back to
+        // the AssetType's default. Quantity 1 with track-by-unit on is still
+        // valid — you get one unit with its own identity, which is fine.
+        var isUnitTracked = req.IsUnitTracked ?? assetType.TrackByUnit;
+
         var asset = new Asset
         {
             TenantId = cu.TenantId!.Value,
@@ -187,8 +216,9 @@ public static class AssetEndpoints
             Name = req.Name.Trim(),
             Description = req.Description,
             LocationDetail = req.LocationDetail,
-            Quantity = req.Quantity > 0 ? req.Quantity : 1,
+            Quantity = qty,
             Status = status,
+            IsUnitTracked = isUnitTracked,
             FieldValues = req.FieldValues is null ? null : JsonDocument.Parse(req.FieldValues.Value.GetRawText()),
             PurchasePrice = req.PurchasePrice,
             PurchasedOn = req.PurchasedOn,
@@ -197,18 +227,61 @@ public static class AssetEndpoints
             UpdatedAt = DateTimeOffset.UtcNow,
         };
 
-        // Auto-generate first tag
-        var code = await GenerateUniqueCode(db, cu.TenantId!.Value, ct);
-        asset.Tags.Add(new AssetTag
+        if (isUnitTracked)
         {
-            TenantId = cu.TenantId!.Value,
-            AssetId = asset.Id,
-            Code = code,
-            Format = "QR",
-        });
+            // One AssetUnit per quantity, each with its own auto-generated tag.
+            // The asset itself gets no tag — scanning happens at the unit level.
+            for (int i = 0; i < qty; i++)
+            {
+                var seed = req.Units is not null && i < req.Units.Count ? req.Units[i] : null;
+                var unit = new AssetUnit
+                {
+                    TenantId = cu.TenantId!.Value,
+                    AssetId = asset.Id,
+                    UnitNumber = i + 1,
+                    Status = status,
+                    SerialNumber = string.IsNullOrWhiteSpace(seed?.SerialNumber) ? null : seed.SerialNumber.Trim(),
+                    WarrantyUntil = seed?.WarrantyUntil ?? req.WarrantyUntil,
+                    PurchasedOn = req.PurchasedOn,
+                    PurchasePrice = req.PurchasePrice,
+                    LocationId = req.LocationId,
+                    LocationDetail = req.LocationDetail,
+                    FieldValues = seed?.FieldValues is null
+                        ? null
+                        : JsonDocument.Parse(seed.FieldValues.Value.GetRawText()),
+                    CreatedBy = cu.UserId!.Value,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                };
+
+                var unitCode = await GenerateUniqueCode(db, cu.TenantId!.Value, ct);
+                unit.Tags.Add(new AssetTag
+                {
+                    TenantId = cu.TenantId!.Value,
+                    AssetId = asset.Id,
+                    UnitId = unit.Id,
+                    Code = unitCode,
+                    Format = "QR",
+                });
+                asset.Units.Add(unit);
+            }
+        }
+        else
+        {
+            // Old behaviour: one tag at the asset level, no units.
+            var code = await GenerateUniqueCode(db, cu.TenantId!.Value, ct);
+            asset.Tags.Add(new AssetTag
+            {
+                TenantId = cu.TenantId!.Value,
+                AssetId = asset.Id,
+                Code = code,
+                Format = "QR",
+            });
+        }
 
         db.Assets.Add(asset);
-        audit.Log("Created", "Asset", asset.Id, $"Created asset '{asset.Name}'", new { asset.Name, asset.AssetTypeId, code });
+        audit.Log("Created", "Asset", asset.Id,
+            $"Created asset '{asset.Name}'" + (isUnitTracked ? $" ({qty} unit{(qty == 1 ? "" : "s")})" : ""),
+            new { asset.Name, asset.AssetTypeId, isUnitTracked, qty });
         await db.SaveChangesAsync(ct);
 
         // Reload with includes
@@ -218,6 +291,7 @@ public static class AssetEndpoints
             .Include(a => a.Tags)
             .Include(a => a.Photos)
             .Include(a => a.AssignedToUser)
+            .Include(a => a.Units)
             .FirstAsync(a => a.Id == asset.Id, ct);
 
         return TypedResults.Ok(MapDetail(created, http));
@@ -234,6 +308,7 @@ public static class AssetEndpoints
             .Include(a => a.Tags)
             .Include(a => a.Photos)
             .Include(a => a.AssignedToUser)
+            .Include(a => a.Units)
             .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == cu.TenantId && a.DeletedAt == null, ct);
         if (asset is null) return TypedResults.NotFound();
 
@@ -315,15 +390,23 @@ public static class AssetEndpoints
     static AssetDetailDto MapDetail(Asset a, HttpRequest http)
     {
         var baseUrl = $"{http.Scheme}://{http.Host}";
+        // For unit-tracked assets, the displayed quantity reflects the count of
+        // live units. "Available" = not currently checked out to anyone.
+        var liveUnits = a.Units.Where(u => u.DeletedAt == null).ToList();
+        var unitCount = liveUnits.Count;
+        var availableCount = liveUnits.Count(u => u.AssignedToUserId == null);
+        var displayQty = a.IsUnitTracked ? unitCount : a.Quantity;
+
         return new AssetDetailDto(
             a.Id, a.Name, a.Description,
             a.LocationId, a.Location?.Name, a.LocationDetail,
-            a.Quantity, a.Status.ToString(),
+            displayQty, a.Status.ToString(),
             a.AssetTypeId, a.AssetType.Name, a.AssetType.CategoryId, a.AssetType.Category.Name,
             a.FieldValues?.RootElement,
             a.PurchasePrice, a.PurchasedOn, a.WarrantyUntil,
             a.AssignedToUserId, a.AssignedToUser?.DisplayName,
-            a.Tags.Select(t => new TagDto(
+            a.IsUnitTracked, unitCount, availableCount,
+            a.Tags.Where(t => t.UnitId == null).Select(t => new TagDto(
                 t.Id, t.Code, t.Format, t.Status.ToString(), t.CreatedAt,
                 $"{baseUrl}/api/tags/{t.Code}/qr.png")).ToList(),
             a.Photos.Select(p => new PhotoDto(
@@ -331,7 +414,7 @@ public static class AssetEndpoints
             a.CreatedAt, a.UpdatedAt);
     }
 
-    static async Task<string> GenerateUniqueCode(AppDbContext db, Guid tenantId, CancellationToken ct)
+    internal static async Task<string> GenerateUniqueCode(AppDbContext db, Guid tenantId, CancellationToken ct)
     {
         for (int attempt = 0; attempt < 5; attempt++)
         {

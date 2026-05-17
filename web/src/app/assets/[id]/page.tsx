@@ -5,13 +5,13 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth, useCan } from "@/lib/auth-context";
-import { api, AssetDetail, MaintenanceTicket, Movement } from "@/lib/api";
+import { api, AssetDetail, MaintenanceTicket, Movement, UnitListItem } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/card";
 import {
-  ArrowLeft, ArrowRight, Camera, History, MapPin, Pencil, Printer,
-  Trash2, UserCheck, UserMinus, Wrench, X,
+  ArrowLeft, ArrowRight, Boxes, Camera, ChevronRight, History, MapPin, Pencil, Plus,
+  Printer, ScanLine, Trash2, UserCheck, UserMinus, Wrench, X,
 } from "lucide-react";
 import { formatDate, formatDateTime, relativeTime } from "@/lib/utils";
 import { StatusBadge } from "@/components/status";
@@ -44,6 +44,23 @@ export default function AssetDetailPage() {
     queryKey: ["tickets-by-asset", params.id],
     queryFn: () => api.get<MaintenanceTicket[]>(`/maintenance/by-asset/${params.id}`, accessToken),
     enabled: !!accessToken && !!params.id,
+  });
+
+  const units = useQuery({
+    queryKey: ["units", params.id],
+    queryFn: () => api.get<UnitListItem[]>(`/assets/${params.id}/units`, accessToken),
+    enabled: !!accessToken && !!params.id && !!asset.data?.isUnitTracked,
+  });
+
+  // For unit-tracked assets we open a different modal (multi-select + scan).
+  const [unitCheckout, setUnitCheckout] = useState<"out" | "in" | null>(null);
+
+  const addUnit = useMutation({
+    mutationFn: () => api.post<unknown>(`/assets/${params.id}/units`, {}, accessToken),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["units", params.id] });
+      qc.invalidateQueries({ queryKey: ["asset", params.id] });
+    },
   });
 
   const del = useMutation({
@@ -86,15 +103,28 @@ export default function AssetDetailPage() {
           <Link href="/assets"><ArrowLeft className="mr-2 h-4 w-4" /> Back to assets</Link>
         </Button>
         <div className="flex flex-wrap gap-2">
-          {canCheckout && (a.assignedToUserId ? (
-            <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "CheckIn" })}>
-              <UserMinus className="mr-2 h-4 w-4" /> Check in
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "CheckOut" })}>
-              <UserCheck className="mr-2 h-4 w-4" /> Check out
-            </Button>
-          ))}
+          {canCheckout && (
+            a.isUnitTracked ? (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setUnitCheckout("out")}>
+                  <UserCheck className="mr-2 h-4 w-4" /> Check out units
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setUnitCheckout("in")}>
+                  <UserMinus className="mr-2 h-4 w-4" /> Check in units
+                </Button>
+              </>
+            ) : (
+              a.assignedToUserId ? (
+                <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "CheckIn" })}>
+                  <UserMinus className="mr-2 h-4 w-4" /> Check in
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "CheckOut" })}>
+                  <UserCheck className="mr-2 h-4 w-4" /> Check out
+                </Button>
+              )
+            )
+          )}
           {canCheckout && (
             <Button variant="outline" size="sm" onClick={() => setMovementForm({ kind: "Move" })}>
               <MapPin className="mr-2 h-4 w-4" /> Move
@@ -183,6 +213,56 @@ export default function AssetDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {a.isUnitTracked && (
+            <Card className="print-hide">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Boxes className="h-5 w-5" /> Units
+                  <span className="text-sm font-normal text-muted-foreground">
+                    ({a.availableUnitCount} of {a.unitCount} available)
+                  </span>
+                </CardTitle>
+                {canWrite && (
+                  <Button size="sm" variant="outline" disabled={addUnit.isPending}
+                          onClick={() => addUnit.mutate()}>
+                    <Plus className="mr-1 h-3 w-3" /> Add unit
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {units.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+                {units.data && units.data.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No units yet.</p>
+                )}
+                {units.data && units.data.length > 0 && (
+                  <ul className="divide-y">
+                    {units.data.map(u => (
+                      <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                        <Link href={`/assets/${params.id}/units/${u.id}`}
+                              className="flex flex-1 items-center gap-3 min-w-0 hover:bg-accent rounded-md p-2 -m-2">
+                          <div className="font-mono text-sm font-medium w-12">#{u.unitNumber}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">
+                              {u.serialNumber || <span className="text-muted-foreground italic">No serial</span>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <StatusBadge status={u.status} />
+                              {u.assignedToName && (
+                                <span>· checked out to <b className="text-foreground">{u.assignedToName}</b></span>
+                              )}
+                              {u.primaryTagCode && <span className="font-mono">· {u.primaryTagCode}</span>}
+                            </div>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="print-hide">
             <CardHeader>
@@ -280,7 +360,7 @@ export default function AssetDetailPage() {
           </Card>
         </div>
 
-        {/* Movement modal */}
+        {/* Movement modal (non-unit assets) */}
         {movementForm && (
           <MovementModal
             kind={movementForm.kind}
@@ -293,6 +373,22 @@ export default function AssetDetailPage() {
               qc.invalidateQueries({ queryKey: ["asset", params.id] });
               qc.invalidateQueries({ queryKey: ["movements", params.id] });
               qc.invalidateQueries({ queryKey: ["assets"] });
+            }}
+          />
+        )}
+
+        {/* Unit checkout/checkin modal */}
+        {unitCheckout && units.data && (
+          <UnitCheckoutModal
+            mode={unitCheckout}
+            assetId={params.id}
+            units={units.data}
+            onClose={() => setUnitCheckout(null)}
+            onDone={() => {
+              setUnitCheckout(null);
+              qc.invalidateQueries({ queryKey: ["asset", params.id] });
+              qc.invalidateQueries({ queryKey: ["units", params.id] });
+              qc.invalidateQueries({ queryKey: ["movements", params.id] });
             }}
           />
         )}
@@ -444,6 +540,198 @@ function MovementModal({
               <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
               <Button type="submit" disabled={submit.isPending}>
                 {submit.isPending ? "Saving…" : title}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/// Batch check-out / check-in for a unit-tracked asset. Two ways to add units
+/// to the basket: tick them in the pick-list, or paste/scan a barcode and let
+/// it resolve via the tag API. The same modal does both checkout and checkin
+/// because the UX is identical — only the eligible units differ.
+function UnitCheckoutModal({
+  mode, assetId, units, onClose, onDone,
+}: {
+  mode: "out" | "in";
+  assetId: string;
+  units: UnitListItem[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { accessToken } = useAuth();
+  // Available list depends on the mode: for check-out we want unassigned units,
+  // for check-in we want only checked-out ones.
+  const eligible = units.filter(u =>
+    mode === "out" ? !u.assignedToUserId : !!u.assignedToUserId);
+
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [scanCode, setScanCode] = useState("");
+  const [scanErr, setScanErr] = useState<string | null>(null);
+  const [toLocation, setToLocation] = useState("");
+  const [notes, setNotes] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  // Member dropdown for the check-out recipient — same source as the
+  // non-unit modal above.
+  const members = useQuery({
+    queryKey: ["members"],
+    queryFn: () => api.get<{ userId: string; displayName: string; email: string }[]>("/tenant/members", accessToken),
+    enabled: !!accessToken && mode === "out",
+  });
+  const [toUserId, setToUserId] = useState("");
+
+  function toggle(unitId: string) {
+    setPicked(s => {
+      const next = new Set(s);
+      next.has(unitId) ? next.delete(unitId) : next.add(unitId);
+      return next;
+    });
+  }
+
+  async function handleScan() {
+    if (!scanCode.trim()) return;
+    setScanErr(null);
+    try {
+      // Tag scan returns a kind=Asset|Unit envelope. We only care about Unit
+      // matches that belong to this asset and are eligible for this action.
+      const result = await api.get<any>(`/tags/scan/${scanCode.trim()}`, accessToken);
+      if (result?.kind !== "Unit" || !result.unit) {
+        setScanErr("That code doesn't belong to a unit.");
+        return;
+      }
+      const u = result.unit;
+      if (u.assetId !== assetId) {
+        setScanErr("That unit belongs to a different asset.");
+        return;
+      }
+      const matching = eligible.find(e => e.id === u.id);
+      if (!matching) {
+        setScanErr(mode === "out"
+          ? "That unit is already checked out."
+          : "That unit isn't checked out.");
+        return;
+      }
+      setPicked(s => new Set(s).add(u.id));
+      setScanCode("");
+    } catch {
+      setScanErr("Couldn't find that code in this workspace.");
+    }
+  }
+
+  const submit = useMutation({
+    mutationFn: () => {
+      if (picked.size === 0) throw new Error("Pick at least one unit.");
+      const body = mode === "out"
+        ? { unitIds: Array.from(picked), toUserId: toUserId || null, toLocation: toLocation || null, notes: notes || null }
+        : { unitIds: Array.from(picked), toLocation: toLocation || null, notes: notes || null };
+      const path = mode === "out"
+        ? `/assets/${assetId}/units/check-out-batch`
+        : `/assets/${assetId}/units/check-in-batch`;
+      return api.post(path, body, accessToken);
+    },
+    onSuccess: () => onDone(),
+    onError: (e: any) => setErr(e?.message || "Action failed."),
+  });
+
+  const title = mode === "out" ? "Check out units" : "Check in units";
+  const verb = mode === "out" ? "Check out" : "Check in";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 print-hide"
+         onClick={onClose}>
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-card border-b">
+          <CardTitle>{title}</CardTitle>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={e => { e.preventDefault(); submit.mutate(); }} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="scan">Scan or paste barcode</Label>
+              <div className="flex gap-2">
+                <Input id="scan" placeholder="Enter unit's barcode…" value={scanCode}
+                       onChange={e => setScanCode(e.target.value)}
+                       onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleScan(); } }} />
+                <Button type="button" variant="outline" onClick={handleScan}>
+                  <ScanLine className="mr-1 h-4 w-4" /> Add
+                </Button>
+              </div>
+              {scanErr && <p className="text-xs text-destructive">{scanErr}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Or pick from the list ({eligible.length} eligible)</Label>
+                {picked.size > 0 && (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
+                    Clear ({picked.size})
+                  </Button>
+                )}
+              </div>
+              <div className="max-h-64 overflow-y-auto rounded-md border">
+                {eligible.length === 0 ? (
+                  <p className="p-3 text-sm text-muted-foreground">
+                    {mode === "out" ? "No units available to check out." : "No units to check in."}
+                  </p>
+                ) : (
+                  <ul className="divide-y">
+                    {eligible.map(u => (
+                      <li key={u.id}>
+                        <label className="flex items-center gap-3 p-2 hover:bg-accent cursor-pointer">
+                          <input type="checkbox" checked={picked.has(u.id)}
+                                 onChange={() => toggle(u.id)} />
+                          <div className="font-mono text-sm w-12">#{u.unitNumber}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm truncate">
+                              {u.serialNumber || <span className="text-muted-foreground italic">No serial</span>}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {u.assignedToName ? `Out with ${u.assignedToName}` : "Available"}
+                              {u.primaryTagCode && ` · ${u.primaryTagCode}`}
+                            </div>
+                          </div>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {mode === "out" && (
+              <div className="space-y-2">
+                <Label htmlFor="u-to">Check out to</Label>
+                <select id="u-to" value={toUserId}
+                        onChange={e => setToUserId(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <option value="">Myself</option>
+                  {members.data?.map(m => (
+                    <option key={m.userId} value={m.userId}>{m.displayName} ({m.email})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="u-loc">Location</Label>
+              <Input id="u-loc" value={toLocation}
+                     onChange={e => setToLocation(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="u-notes">Notes</Label>
+              <Textarea id="u-notes" rows={2} value={notes}
+                        onChange={e => setNotes(e.target.value)} />
+            </div>
+
+            {err && <p className="text-sm text-destructive">{err}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={submit.isPending || picked.size === 0}>
+                {submit.isPending ? "Saving…" : `${verb} ${picked.size || ""} unit${picked.size === 1 ? "" : "s"}`}
               </Button>
             </div>
           </form>

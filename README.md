@@ -16,6 +16,7 @@ Core
 
 Operational
 - **Check-in / check-out / move** workflow with full movement history per asset
+- **Per-unit tracking** — turn on "Track each unit individually" for an asset type and every physical instance gets its own barcode, IMEI/serial, warranty, status and check-out lifecycle. 1-of-10 partial checkout works out of the box
 - **Maintenance tickets** — preventive, corrective, inspection — with status, priority, assignee, scheduling, cost
 - **Audit log** — append-only, every write captured, filterable
 - **In-app notifications** with unread bell + email copy
@@ -126,11 +127,36 @@ All assets, categories, tags, and files are scoped to the active tenant. The API
 
 ```
 AssetCategory  → tree of categories (e.g., "IT > Laptops")
-AssetType      → template defining custom fields (e.g., "Laptop" type with fields: Serial, CPU, RAM)
-Asset          → an instance of an AssetType, holds the values
-AssetTag       → a barcode/QR identifier attached to an asset
-                 (one asset can have multiple tags — re-tagging supported)
+AssetType      → template defining custom fields + TrackByUnit default
+Asset          → an instance of an AssetType, holds the shared values
+AssetUnit      → one physical instance of a unit-tracked Asset, owns
+                 its own identity (serial/IMEI), status, location,
+                 warranty, assignment, and barcode
+AssetTag       → a barcode/QR identifier attached to an asset OR a
+                 specific unit (one asset/unit can have multiple)
 ```
+
+### Unit tracking (per-instance identity)
+
+For asset types where each physical instance has its own identity — phones with
+unique IMEIs, laptops with serials, vehicles with VINs — toggle **Track each
+unit individually** on the asset type. From then on:
+
+- Creating an asset with quantity 10 spawns 10 `AssetUnit` rows, each with its
+  own auto-generated barcode/QR
+- At create time the form shows an optional grid so you can fill IMEI/serial
+  and warranty per row, or leave it blank and fill in later from each unit's page
+- Each unit has its own status (`InService` / `InRepair` / `Lost` / …), location,
+  assignee and movement history
+- Scanning a unit's barcode opens that specific unit's page, not the parent
+- **Partial check-out works** — the "Check out units" button opens a dialog
+  where you tick the units to check out (or scan their barcodes to add). Same
+  for check-in. The asset card shows `n of N available`
+- Photos and maintenance tickets stay at the parent-asset level for now —
+  per-unit photos/tickets are a future addition
+
+Bulk consumables (printer paper, cables) keep the simple quantity-based flow
+by leaving the toggle off.
 
 ### Barcode flow
 
@@ -303,15 +329,33 @@ Everything in one Docker network. No external calls. Works offline once the imag
 ## Important: schema changes during development
 
 The API uses `EnsureCreatedAsync` to provision the schema on first run. It does NOT
-migrate an existing database when entities change. If you pull a new version that
-adds tables/columns, you need to reset the local DB — use `safe-rebuild` so your
-existing data ends up in a backup file you can restore later:
+migrate an existing database when entities change — so `docker compose up -d --build`
+on its own will leave your DB on the OLD schema and the new code's queries will
+500 (you'll see things like "assets disappear from the list while counts still show",
+because only the queries that touch new columns fail).
+
+You have two ways out:
+
+**Preferred — apply the SQL migration (preserves data).** The repo ships a
+hand-written migration script that idempotently adds the new columns/tables.
+Safe to run on any older version of the schema:
+
+```bash
+./scripts/migrate.sh                # bash       — backs up, applies, restarts API
+# .\scripts\migrate.ps1             # PowerShell
+
+# Skip the auto-backup if you already have one:
+./scripts/migrate.sh ./scripts/migrate-2026-05-units.sql --no-backup
+```
+
+**Fallback — wipe and start fresh.** Use this if a migration script isn't
+available for the release you're upgrading to:
 
 ```bash
 ./scripts/safe-rebuild.sh           # bash    — auto-backs-up, then down -v + up
 # .\scripts\safe-rebuild.ps1        # PowerShell
 
-# Then, if you want the old data back AGAINST THE NEW SCHEMA, restore:
+# Then optionally restore data INTO THE OLD SHAPE (note: drops the new schema):
 ./scripts/restore.sh ./backups/assethub_pre-rebuild_<timestamp>.sql
 ```
 
@@ -325,6 +369,13 @@ re-entering or re-importing your data.
 > `PasswordResetTokens` table. The shape is additive so an old dump can usually
 > be restored cleanly into the new schema — the new columns just take their
 > defaults (active=true, root=false).
+
+> **Upgrading to the unit-tracking release?** This version adds a new
+> `AssetUnits` table plus three new columns on existing tables: `Assets.IsUnitTracked`,
+> `AssetTypes.TrackByUnit`, `AssetTags.UnitId`, `AssetMovements.UnitId`. All
+> additive. After `safe-rebuild` you can restore the old dump and existing
+> assets simply stay in non-unit-tracked mode — flip the toggle on their
+> AssetType only for new instances going forward.
 
 Switch to proper EF Core migrations before going to production with real data —
 that path applies schema diffs incrementally and doesn't need this dance at all.

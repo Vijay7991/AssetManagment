@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Boxes } from "lucide-react";
+
+type UnitSeed = { serialNumber: string; warrantyUntil: string };
 
 export default function NewAssetPage() {
   const router = useRouter();
@@ -40,10 +42,35 @@ export default function NewAssetPage() {
     warrantyUntil: "",
   });
   const [fieldValues, setFieldValues] = useState<Record<string, any>>({});
+  // null = inherit from the AssetType's TrackByUnit. true/false = explicit override.
+  const [isUnitTrackedOverride, setIsUnitTrackedOverride] = useState<boolean | null>(null);
+  const [unitSeeds, setUnitSeeds] = useState<UnitSeed[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const selectedType = types.data?.find(t => t.id === form.assetTypeId);
+
+  // Resolved unit-tracking flag. If the user hasn't explicitly chosen, fall back
+  // to the AssetType's default — for new types created before this feature
+  // existed, trackByUnit is undefined → treat as false.
+  const isUnitTracked = isUnitTrackedOverride ?? !!selectedType?.trackByUnit;
+
+  // Keep the seed array in lockstep with quantity when unit tracking is on. We
+  // don't want stale rows hanging around if the user dialled quantity back down.
+  useEffect(() => {
+    if (!isUnitTracked) { setUnitSeeds([]); return; }
+    setUnitSeeds(prev => {
+      const next = prev.slice(0, form.quantity);
+      while (next.length < form.quantity) {
+        next.push({ serialNumber: "", warrantyUntil: "" });
+      }
+      return next;
+    });
+  }, [isUnitTracked, form.quantity]);
+
+  function updateSeed(i: number, patch: Partial<UnitSeed>) {
+    setUnitSeeds(s => s.map((row, idx) => idx === i ? { ...row, ...patch } : row));
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,6 +80,17 @@ export default function NewAssetPage() {
     }
     setBusy(true); setErr(null);
     try {
+      // Map the inline grid to the backend's UnitSeed shape. Empty strings are
+      // sent as null so the unit lands with no identity rather than "" — much
+      // easier to filter on later.
+      const units = isUnitTracked
+        ? unitSeeds.map(s => ({
+            serialNumber: s.serialNumber.trim() || null,
+            warrantyUntil: s.warrantyUntil || null,
+            fieldValues: null,
+          }))
+        : null;
+
       const payload = {
         name: form.name,
         assetTypeId: form.assetTypeId,
@@ -65,6 +103,10 @@ export default function NewAssetPage() {
         purchasePrice: form.purchasePrice ? Number(form.purchasePrice) : null,
         purchasedOn: form.purchasedOn || null,
         warrantyUntil: form.warrantyUntil || null,
+        // Send the override only when the user actually toggled it — null lets
+        // the backend honour the AssetType's default.
+        isUnitTracked: isUnitTrackedOverride,
+        units,
       };
       const created = await api.post<AssetDetail>("/assets", payload, accessToken);
       router.push(`/assets/${created.id}`);
@@ -154,6 +196,63 @@ export default function NewAssetPage() {
                        onChange={e => setForm(f => ({ ...f, warrantyUntil: e.target.value }))} />
               </div>
             </div>
+
+            {selectedType && (
+              <div className="rounded-md border p-4 space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" className="mt-1"
+                         checked={isUnitTracked}
+                         onChange={e => setIsUnitTrackedOverride(e.target.checked)} />
+                  <div className="space-y-0.5">
+                    <div className="text-sm font-medium flex items-center gap-1.5">
+                      <Boxes className="h-4 w-4" /> Track each unit individually
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedType.trackByUnit
+                        ? `Default for ${selectedType.name}. Each of the ${form.quantity} unit${form.quantity === 1 ? "" : "s"} will get its own barcode and identity.`
+                        : `Override the default off-setting for ${selectedType.name}.`}
+                    </p>
+                  </div>
+                </label>
+
+                {isUnitTracked && form.quantity > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Optional: fill in identity for each unit now, or leave blank
+                      and edit from each unit's page later. Skipping is fine —
+                      every unit gets a barcode either way.
+                    </p>
+                    <div className="overflow-x-auto rounded-md border">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/40">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left w-12">#</th>
+                            <th className="px-2 py-1.5 text-left">Serial / IMEI</th>
+                            <th className="px-2 py-1.5 text-left w-44">Warranty until</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {unitSeeds.map((row, i) => (
+                            <tr key={i} className="border-t">
+                              <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+                              <td className="px-2 py-1">
+                                <Input value={row.serialNumber}
+                                       placeholder="(blank = fill in later)"
+                                       onChange={e => updateSeed(i, { serialNumber: e.target.value })} />
+                              </td>
+                              <td className="px-2 py-1">
+                                <Input type="date" value={row.warrantyUntil}
+                                       onChange={e => updateSeed(i, { warrantyUntil: e.target.value })} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {selectedType?.fieldSchema && selectedType.fieldSchema.length > 0 && (
               <div className="rounded-md border p-4 space-y-3">

@@ -147,6 +147,13 @@ public class AssetType
     [Column(TypeName = "jsonb")]
     public JsonDocument? FieldSchema { get; set; }
 
+    /// Default for new assets of this type: spawn one AssetUnit per quantity so
+    /// each physical instance has its own identity (IMEI, serial, warranty),
+    /// its own barcode, and its own check-out lifecycle. Per-asset override
+    /// still wins. Turn off for consumables (paper, cables) where individual
+    /// tracking is meaningless.
+    public bool TrackByUnit { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public ICollection<Asset> Assets { get; set; } = new List<Asset>();
@@ -173,7 +180,16 @@ public class Asset
     public int Quantity { get; set; } = 1;
     public AssetStatus Status { get; set; } = AssetStatus.InService;
 
+    /// When true, every physical instance is tracked as its own AssetUnit:
+    /// each has its own identity (IMEI, serial), tag/barcode, status and
+    /// check-out lifecycle. The asset row becomes a "model" and Quantity is
+    /// derived from the count of live units. When false, Quantity is a flat
+    /// stock count and tags/movements live on the asset directly.
+    public bool IsUnitTracked { get; set; }
+
     /// Per-instance values matching the AssetType.FieldSchema. JSONB.
+    /// For unit-tracked assets these are the "shared" defaults; the per-unit
+    /// row has its own FieldValues that override.
     [Column(TypeName = "jsonb")]
     public JsonDocument? FieldValues { get; set; }
 
@@ -192,6 +208,56 @@ public class Asset
     public ICollection<AssetTag> Tags { get; set; } = new List<AssetTag>();
     public ICollection<AssetPhoto> Photos { get; set; } = new List<AssetPhoto>();
     public ICollection<AssetMovement> Movements { get; set; } = new List<AssetMovement>();
+    public ICollection<AssetUnit> Units { get; set; } = new List<AssetUnit>();
+}
+
+/// One physical instance of a unit-tracked Asset. Owns its own identity
+/// (serial number / IMEI inside FieldValues), its own status, its own tag/
+/// barcode, its own check-out lifecycle, and its own movement history. The
+/// parent Asset is the catalogue entry ("iPhone 15 Pro 256GB stock") and
+/// each unit is one physical phone.
+public class AssetUnit
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid AssetId { get; set; }
+    public Asset Asset { get; set; } = null!;
+
+    /// 1-based position within the asset, useful for labels ("Unit 3 of 10").
+    /// Auto-assigned on creation, immutable thereafter — gaps are fine if you
+    /// retire units.
+    public int UnitNumber { get; set; }
+
+    /// Primary identity column — surfaced separately from FieldValues so we can
+    /// index it and search across units quickly (e.g. "find the phone with
+    /// IMEI 357…"). Free-form: serial, IMEI, MAC address, asset tag from the
+    /// previous system, whatever.
+    [MaxLength(120)] public string? SerialNumber { get; set; }
+
+    public AssetStatus Status { get; set; } = AssetStatus.InService;
+
+    /// Per-unit field values matching the parent AssetType.FieldSchema. JSONB.
+    [Column(TypeName = "jsonb")]
+    public JsonDocument? FieldValues { get; set; }
+
+    public decimal? PurchasePrice { get; set; }
+    public DateOnly? PurchasedOn { get; set; }
+    public DateOnly? WarrantyUntil { get; set; }
+
+    public Guid? LocationId { get; set; }
+    public Location? Location { get; set; }
+    [MaxLength(120)] public string? LocationDetail { get; set; }
+
+    public Guid? AssignedToUserId { get; set; }
+    public User? AssignedToUser { get; set; }
+
+    public Guid CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? DeletedAt { get; set; }
+
+    public ICollection<AssetTag> Tags { get; set; } = new List<AssetTag>();
+    public ICollection<AssetMovement> Movements { get; set; } = new List<AssetMovement>();
 }
 
 public enum AssetStatus
@@ -209,6 +275,13 @@ public class AssetTag
     public Guid TenantId { get; set; }
     public Guid AssetId { get; set; }
     public Asset Asset { get; set; } = null!;
+
+    /// When set, the tag belongs to a specific unit and scanning it should
+    /// resolve to that unit's page. When null, the tag is at the asset level
+    /// (non-unit-tracked assets, or a "container" tag on the parent asset).
+    public Guid? UnitId { get; set; }
+    public AssetUnit? Unit { get; set; }
+
     [MaxLength(20)] public string Code { get; set; } = "";       // 10-char base32, unique per tenant
     [MaxLength(20)] public string Format { get; set; } = "QR";   // QR, CODE128, DATAMATRIX
     public AssetTagStatus Status { get; set; } = AssetTagStatus.Active;
@@ -240,6 +313,13 @@ public class AssetMovement
     public Guid TenantId { get; set; }
     public Guid AssetId { get; set; }
     public Asset Asset { get; set; } = null!;
+
+    /// When set, this movement targets a specific unit of a unit-tracked asset.
+    /// When null, the movement is at the asset level (single-quantity asset, or
+    /// a bulk move of a non-unit-tracked asset).
+    public Guid? UnitId { get; set; }
+    public AssetUnit? Unit { get; set; }
+
     [MaxLength(40)]  public string Kind { get; set; } = "";      // CheckOut, CheckIn, Move, Status
     [MaxLength(120)] public string? FromLocation { get; set; }
     [MaxLength(120)] public string? ToLocation { get; set; }

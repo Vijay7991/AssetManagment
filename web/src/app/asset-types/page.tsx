@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/card";
-import { Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
+import { Boxes, Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
 
 export default function AssetTypesPage() {
   const { accessToken } = useAuth();
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: "", categoryId: "" });
+  // trackByUnit defaults off — bulk consumables stay simple. Operators turn it
+  // on for asset types where each physical instance has its own identity.
+  const [form, setForm] = useState({ name: "", categoryId: "", trackByUnit: false });
   const [fields, setFields] = useState<FieldSchemaItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
@@ -32,7 +34,7 @@ export default function AssetTypesPage() {
     mutationFn: (body: any) => api.post<AssetTypeRecord>("/asset-types", body, accessToken),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["asset-types"] });
-      setForm({ name: "", categoryId: "" });
+      setForm({ name: "", categoryId: "", trackByUnit: false });
       setFields([]);
       setErr(null);
     },
@@ -65,6 +67,7 @@ export default function AssetTypesPage() {
       name: form.name,
       categoryId: form.categoryId,
       icon: null,
+      trackByUnit: form.trackByUnit,
       fieldSchema: cleaned,
     });
   }
@@ -96,7 +99,14 @@ export default function AssetTypesPage() {
                   return (
                     <li key={t.id} className="flex items-start justify-between gap-2 py-3">
                       <div>
-                        <div className="font-medium">{t.name}</div>
+                        <div className="flex items-center gap-2 font-medium">
+                          {t.name}
+                          {t.trackByUnit && (
+                            <Badge variant="secondary" className="gap-1 text-xs">
+                              <Boxes className="h-3 w-3" /> Unit-tracked
+                            </Badge>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{cat?.name}</div>
                         {schema && schema.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
@@ -134,6 +144,22 @@ export default function AssetTypesPage() {
                   {cats.data?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </Select>
               </div>
+
+              <label className="flex items-start gap-3 rounded-md border p-3 hover:bg-accent cursor-pointer">
+                <input type="checkbox" className="mt-1"
+                       checked={form.trackByUnit}
+                       onChange={e => setForm(f => ({ ...f, trackByUnit: e.target.checked }))} />
+                <div className="space-y-0.5">
+                  <div className="text-sm font-medium flex items-center gap-1.5">
+                    <Boxes className="h-4 w-4" /> Track each unit individually
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Turn this on for things like phones, laptops, or vehicles — each
+                    physical instance gets its own barcode, IMEI/serial, warranty, and
+                    check-out lifecycle. Leave off for consumables (paper, cables).
+                  </p>
+                </div>
+              </label>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

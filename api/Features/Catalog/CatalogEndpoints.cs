@@ -9,8 +9,8 @@ namespace AssetHub.Api.Features.Catalog;
 public record CategoryDto(Guid Id, Guid? ParentId, string Name, string? Icon, string? Color);
 public record CategoryUpsert(string Name, Guid? ParentId, string? Icon, string? Color);
 
-public record AssetTypeDto(Guid Id, Guid CategoryId, string Name, string? Icon, JsonElement? FieldSchema);
-public record AssetTypeUpsert(string Name, Guid CategoryId, string? Icon, JsonElement? FieldSchema);
+public record AssetTypeDto(Guid Id, Guid CategoryId, string Name, string? Icon, bool TrackByUnit, JsonElement? FieldSchema);
+public record AssetTypeUpsert(string Name, Guid CategoryId, string? Icon, bool TrackByUnit, JsonElement? FieldSchema);
 
 public static class CatalogEndpoints
 {
@@ -99,7 +99,7 @@ public static class CatalogEndpoints
         // and the serializer reads it before the DbContext is disposed. No need
         // to round-trip through JsonDocument.Parse (which leaks docs to GC).
         return TypedResults.Ok(list.Select(t => new AssetTypeDto(
-            t.Id, t.CategoryId, t.Name, t.Icon, t.FieldSchema?.RootElement
+            t.Id, t.CategoryId, t.Name, t.Icon, t.TrackByUnit, t.FieldSchema?.RootElement
         )).ToList());
     }
 
@@ -109,7 +109,7 @@ public static class CatalogEndpoints
         var t = await db.AssetTypes.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (t is null) return TypedResults.NotFound();
         return TypedResults.Ok(new AssetTypeDto(
-            t.Id, t.CategoryId, t.Name, t.Icon,
+            t.Id, t.CategoryId, t.Name, t.Icon, t.TrackByUnit,
             t.FieldSchema is null ? null : t.FieldSchema.RootElement));
     }
 
@@ -126,13 +126,14 @@ public static class CatalogEndpoints
             CategoryId = req.CategoryId,
             Name = req.Name.Trim(),
             Icon = req.Icon,
+            TrackByUnit = req.TrackByUnit,
             FieldSchema = req.FieldSchema is null
                 ? JsonDocument.Parse("[]")
                 : JsonDocument.Parse(req.FieldSchema.Value.GetRawText()),
         };
         db.AssetTypes.Add(t);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(new AssetTypeDto(t.Id, t.CategoryId, t.Name, t.Icon, t.FieldSchema?.RootElement));
+        return TypedResults.Ok(new AssetTypeDto(t.Id, t.CategoryId, t.Name, t.Icon, t.TrackByUnit, t.FieldSchema?.RootElement));
     }
 
     static async Task<Results<Ok<AssetTypeDto>, NotFound, ForbidHttpResult>> UpdateType(
@@ -144,10 +145,11 @@ public static class CatalogEndpoints
         t.Name = req.Name.Trim();
         t.CategoryId = req.CategoryId;
         t.Icon = req.Icon;
+        t.TrackByUnit = req.TrackByUnit;
         if (req.FieldSchema is not null)
             t.FieldSchema = JsonDocument.Parse(req.FieldSchema.Value.GetRawText());
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(new AssetTypeDto(t.Id, t.CategoryId, t.Name, t.Icon, t.FieldSchema?.RootElement));
+        return TypedResults.Ok(new AssetTypeDto(t.Id, t.CategoryId, t.Name, t.Icon, t.TrackByUnit, t.FieldSchema?.RootElement));
     }
 
     static async Task<Results<NoContent, NotFound, Conflict<string>, ForbidHttpResult>> DeleteType(

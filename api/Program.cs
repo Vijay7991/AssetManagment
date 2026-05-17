@@ -151,6 +151,7 @@ app.MapAuthEndpoints();
 app.MapTenantEndpoints();
 app.MapCatalogEndpoints();
 app.MapAssetEndpoints();
+app.MapAssetUnitEndpoints();
 app.MapTagEndpoints();
 app.MapFileEndpoints();
 app.MapMovementEndpoints();
