@@ -1,14 +1,5 @@
-using System.Net.Sockets;
-
 namespace AssetHub.Api.Infrastructure;
 
-/// <summary>
-/// Cheap "is the mail server reachable?" probe. We don't try to actually send a
-/// message — opening a TCP connection is enough to tell us whether the SMTP port
-/// is alive without leaving phantom messages in the queue. The result is cached
-/// for a short window so the members page can call this every render without
-/// hammering MailHog.
-/// </summary>
 public interface IMailHealth
 {
     Task<MailHealthStatus> GetAsync(CancellationToken ct = default);
@@ -16,75 +7,45 @@ public interface IMailHealth
 
 public record MailHealthStatus(bool Enabled, DateTimeOffset LastChecked, string? Reason);
 
+/// <summary>
+/// Reports whether email delivery is fully operational:
+///   1. RESEND_API_KEY must be configured.
+///   2. The root admin must have enabled mail delivery (default: off).
+/// Result is cached for 60 s; the admin-toggle portion updates instantly
+/// because IMailSettings keeps its own cache and invalidates on write.
+/// </summary>
 public class MailHealth : IMailHealth
 {
-    // 60s is enough to absorb the burst of calls a members-page render produces,
-    // but short enough that the UI recovers within a minute of SMTP coming back.
     static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
-    readonly SmtpOptions _smtp;
-    readonly ResendOptions _resend;
-    readonly ILogger<MailHealth> _log;
-    readonly SemaphoreSlim _gate = new(1, 1);
+    readonly ResendOptions _opts;
+    readonly IMailSettings _mailSettings;
     MailHealthStatus? _cached;
 
-    public MailHealth(SmtpOptions smtp, ResendOptions resend, ILogger<MailHealth> log)
+    public MailHealth(ResendOptions opts, IMailSettings mailSettings)
     {
-        _smtp = smtp;
-        _resend = resend;
-        _log = log;
+        _opts = opts;
+        _mailSettings = mailSettings;
     }
 
     public async Task<MailHealthStatus> GetAsync(CancellationToken ct = default)
     {
+        // Always re-check the admin toggle (IMailSettings has its own fast cache)
+        // but skip the API-key check if our result is still fresh.
         var snapshot = _cached;
-        if (snapshot is not null && DateTimeOffset.UtcNow - snapshot.LastChecked < CacheTtl)
-            return snapshot;
-
-        // Single-flight: if multiple requests race to probe at once, only one
-        // actually opens the socket; the others wait and reuse the result.
-        await _gate.WaitAsync(ct);
-        try
-        {
-            // Re-check inside the lock — another caller may have refreshed.
-            if (_cached is not null && DateTimeOffset.UtcNow - _cached.LastChecked < CacheTtl)
-                return _cached;
-
-            _cached = await ProbeAsync(ct);
-            return _cached;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
-
-    async Task<MailHealthStatus> ProbeAsync(CancellationToken ct)
-    {
         var now = DateTimeOffset.UtcNow;
 
-        // If Resend is configured it's the active transport — no SMTP probe needed.
-        // We deliberately don't hit Resend's API here; doing so on every health-check
-        // request would burn through API quota for no benefit. The startup
-        // misconfiguration would show up as failed sends in the logs instead.
-        if (_resend.IsConfigured)
-            return new MailHealthStatus(true, now, "Resend");
+        if (string.IsNullOrWhiteSpace(_opts.ApiKey))
+            return Cache(new MailHealthStatus(false, now, "RESEND_API_KEY is not configured."));
 
-        if (string.IsNullOrWhiteSpace(_smtp.Host) || _smtp.Port <= 0)
-            return new MailHealthStatus(false, now, "SMTP host or port not configured.");
+        if (!await _mailSettings.IsEnabledAsync(ct))
+            return Cache(new MailHealthStatus(false, now, "Email delivery has been disabled by an administrator."));
 
-        try
-        {
-            using var probe = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, probe.Token);
-            using var tcp = new TcpClient();
-            await tcp.ConnectAsync(_smtp.Host, _smtp.Port, linked.Token);
-            return new MailHealthStatus(true, now, null);
-        }
-        catch (Exception ex)
-        {
-            _log.LogDebug(ex, "SMTP probe to {Host}:{Port} failed", _smtp.Host, _smtp.Port);
-            return new MailHealthStatus(false, now, ex.GetType().Name);
-        }
+        if (snapshot is not null && now - snapshot.LastChecked < CacheTtl)
+            return snapshot;
+
+        return Cache(new MailHealthStatus(true, now, null));
     }
+
+    MailHealthStatus Cache(MailHealthStatus s) { _cached = s; return s; }
 }

@@ -44,10 +44,10 @@ public class Notifier : INotifier
 
         // Send email best-effort, fire-and-forget. Look up the user's email outside
         // the current SaveChanges so we don't block the audit/business write.
-        _ = SendEmailAsync(userId, title, body);
+        _ = SendEmailAsync(userId, title, body, link);
     }
 
-    async Task SendEmailAsync(Guid userId, string title, string? body)
+    async Task SendEmailAsync(Guid userId, string title, string? body, string? link)
     {
         try
         {
@@ -56,10 +56,7 @@ public class Notifier : INotifier
                 .Select(u => u.Email)
                 .FirstOrDefaultAsync();
             if (string.IsNullOrEmpty(email)) return;
-            var html = $"<h3>{System.Net.WebUtility.HtmlEncode(title)}</h3>";
-            if (!string.IsNullOrEmpty(body))
-                html += $"<p>{System.Net.WebUtility.HtmlEncode(body)}</p>";
-            await _email.SendAsync(email, title, html);
+            await _email.SendAsync(email, title, EmailTemplates.Notification(title, body, link));
         }
         catch (Exception ex)
         {

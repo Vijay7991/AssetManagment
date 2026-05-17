@@ -172,10 +172,12 @@ public static class MaintenanceEndpoints
 
     static async Task<Results<Ok<MaintenanceTicketDto>, NotFound, ForbidHttpResult>> UpdateStatus(
         Guid id, MaintenanceStatusUpdate req, ICurrentUser cu, AppDbContext db,
-        IAuditLogger audit, CancellationToken ct)
+        IAuditLogger audit, IEmailSender email, HttpRequest http, CancellationToken ct)
     {
         if (!cu.Can(Perms.MaintenanceWrite)) return TypedResults.Forbid();
-        var t = await db.MaintenanceTickets.Include(x => x.Asset).Include(x => x.AssignedToUser)
+        var t = await db.MaintenanceTickets
+            .Include(x => x.Asset)
+            .Include(x => x.AssignedToUser)
             .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == cu.TenantId, ct);
         if (t is null) return TypedResults.NotFound();
 
@@ -188,6 +190,25 @@ public static class MaintenanceEndpoints
         audit.Log("StatusChanged", "MaintenanceTicket", t.Id,
             $"Ticket '{t.Title}' → {status}", new { req.Notes });
         await db.SaveChangesAsync(ct);
+
+        // Notify the assignee when a ticket they own is marked Done or Cancelled
+        if (t.AssignedToUser is not null
+            && t.AssignedToUserId != cu.UserId
+            && !string.IsNullOrEmpty(t.AssignedToUser.Email)
+            && (status == MaintenanceStatus.Done || status == MaintenanceStatus.Cancelled))
+        {
+            var baseUrl = $"{http.Scheme}://{http.Host}";
+            var link = $"{baseUrl}/maintenance/{t.Id}";
+            var html = status == MaintenanceStatus.Done
+                ? EmailTemplates.RequestApproved(t.AssignedToUser.DisplayName, t.Title, req.Notes, link)
+                : EmailTemplates.RequestRejected(t.AssignedToUser.DisplayName, t.Title, req.Notes, link);
+            _ = email.SendAsync(t.AssignedToUser.Email,
+                status == MaintenanceStatus.Done
+                    ? $"Maintenance ticket completed: {t.Title}"
+                    : $"Maintenance ticket cancelled: {t.Title}",
+                html);
+        }
+
         return TypedResults.Ok(MapDto(t));
     }
 

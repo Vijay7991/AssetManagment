@@ -4,6 +4,17 @@ using System.Text.Json;
 
 namespace AssetHub.Api.Domain;
 
+/// Generic key-value store for platform-level operator settings.
+/// Currently used for the mail-enabled toggle; extend as needed.
+public class SystemSetting
+{
+    [Key]
+    [MaxLength(80)]  public string Key { get; set; } = "";
+    [MaxLength(500)] public string Value { get; set; } = "";
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public Guid? UpdatedByUserId { get; set; }
+}
+
 // ─── Tenancy ─────────────────────────────────────────────────────────
 
 public class Tenant
@@ -61,6 +72,19 @@ public class PasswordResetToken
     /// "Self" (user clicked forgot-password) or "Admin" (admin pushed a reset link).
     [MaxLength(20)]  public string Source { get; set; } = "Self";
     public Guid? IssuedByUserId { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? ConsumedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// Single-use token sent by email to prove the user owns the address.
+/// Generated on signup and re-sendable. Verified by the /api/auth/verify-email endpoint.
+public class EmailVerificationToken
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public User User { get; set; } = null!;
+    [MaxLength(200)] public string TokenHash { get; set; } = "";
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? ConsumedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

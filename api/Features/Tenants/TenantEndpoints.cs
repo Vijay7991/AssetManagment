@@ -205,14 +205,9 @@ public static class TenantEndpoints
         var baseUrl = $"{http.Scheme}://{http.Host}";
         var link = $"{baseUrl}/reset-password?token={plain}";
 
-        _ = mail.SendAsync(
-            m.User.Email,
+        _ = mail.SendAsync(m.User.Email,
             $"Password reset for {m.Tenant.Name}",
-            $"<p>Hi {System.Net.WebUtility.HtmlEncode(m.User.DisplayName)},</p>" +
-            $"<p>An administrator of <b>{System.Net.WebUtility.HtmlEncode(m.Tenant.Name)}</b> has " +
-            $"initiated a password reset for your AssetHub account.</p>" +
-            $"<p><a href=\"{link}\">Set a new password</a></p>" +
-            "<p>This link expires in 1 hour.</p>");
+            EmailTemplates.AdminPasswordReset(m.User.DisplayName, m.Tenant.Name, link));
 
         // We hand the link back to the admin too — handy when MailHog isn't being
         // watched, or for closed/offline environments where the user is sitting
@@ -353,9 +348,7 @@ public static class TenantEndpoints
             var link = $"{baseUrl}/invite/{token}";
             _ = mail.SendAsync(invite.Email,
                 $"You've been invited to {tenant.Name}",
-                $"<p>You've been invited to join the AssetHub workspace <b>{System.Net.WebUtility.HtmlEncode(tenant.Name)}</b>.</p>" +
-                $"<p><a href=\"{link}\">Accept invite</a></p>" +
-                $"<p>This link expires in 7 days.</p>");
+                EmailTemplates.WorkspaceInvite(tenant.Name, invite.Role, link));
         }
 
         return TypedResults.Ok(MapInviteDto(invite, baseUrl));

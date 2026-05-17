@@ -28,14 +28,16 @@ var jwtOpts = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
 if (jwtOpts.Secret.Length < 32)
     throw new InvalidOperationException("Jwt:Secret must be at least 32 characters.");
 
-var smtpOpts = builder.Configuration.GetSection("Smtp").Get<SmtpOptions>() ?? new SmtpOptions();
-var storageOpts = builder.Configuration.GetSection("Storage").Get<StorageOptions>() ?? new StorageOptions();
+// ResendOptions: prefer the typed "Resend" section, then fall back to the
+// flat RESEND_API_KEY env var for installs that just dropped it into .env.
 var resendOpts = builder.Configuration.GetSection("Resend").Get<ResendOptions>() ?? new ResendOptions();
+if (string.IsNullOrWhiteSpace(resendOpts.ApiKey))
+    resendOpts.ApiKey = builder.Configuration["RESEND_API_KEY"] ?? "";
+var storageOpts = builder.Configuration.GetSection("Storage").Get<StorageOptions>() ?? new StorageOptions();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? new[] { "http://localhost:3000" };
 
 builder.Services.AddSingleton(jwtOpts);
-builder.Services.AddSingleton(smtpOpts);
 builder.Services.AddSingleton(resendOpts);
 builder.Services.AddSingleton(storageOpts);
 
@@ -75,18 +77,17 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IBarcodeRenderer, BarcodeRenderer>();
-// Pick the mail transport at startup based on whether RESEND_API_KEY was
-// supplied. Resend goes over HTTPS (port 443), so it works behind Cloudflare
-// Tunnel and firewalled networks where outbound SMTP is blocked. SMTP /
-// MailHog stays the dev default because it requires no external service.
-if (resendOpts.IsConfigured)
+// Resend over HTTPS — works behind Cloudflare Tunnel and on networks that
+// block outbound SMTP. The named HttpClient lets ResendEmailSender resolve
+// a configured client via IHttpClientFactory.CreateClient("resend").
+builder.Services.AddHttpClient("resend", c =>
 {
-    builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>();
-}
-else
-{
-    builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
-}
+    c.BaseAddress = new Uri("https://api.resend.com/");
+    c.DefaultRequestHeaders.Authorization =
+        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", resendOpts.ApiKey);
+});
+builder.Services.AddSingleton<IMailSettings, MailSettingsService>();
+builder.Services.AddSingleton<IEmailSender, ResendEmailSender>();
 builder.Services.AddSingleton<IMailHealth, MailHealth>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<INotifier, Notifier>();

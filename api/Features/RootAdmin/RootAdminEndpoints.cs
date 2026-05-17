@@ -28,6 +28,7 @@ public record RootTenantDto(
 
 public record RootUpdateActiveRequest(bool IsActive);
 public record RootResetResponse(string ResetLink, DateTimeOffset ExpiresAt);
+public record MailSettingsRequest(bool Enabled);
 
 // ── Endpoints ───────────────────────────────────────────────────────
 
@@ -46,6 +47,8 @@ public static class RootAdminEndpoints
         grp.MapPost("/users/{userId:guid}/reset-password", ResetPassword);
         grp.MapPut("/users/{userId:guid}/root", PromoteToRoot);
         grp.MapDelete("/users/{userId:guid}", DeleteUser);
+        grp.MapGet("/settings/mail", GetMailSettings);
+        grp.MapPut("/settings/mail", UpdateMailSettings);
     }
 
     static async Task<Results<Ok<List<RootUserDto>>, ForbidHttpResult>> ListUsers(
@@ -152,13 +155,8 @@ public static class RootAdminEndpoints
         var baseUrl = $"{http.Scheme}://{http.Host}";
         var link = $"{baseUrl}/reset-password?token={plain}";
 
-        _ = mail.SendAsync(
-            user.Email,
-            "Password reset (AssetHub)",
-            $"<p>Hi {System.Net.WebUtility.HtmlEncode(user.DisplayName)},</p>" +
-            "<p>The AssetHub platform administrator initiated a password reset for your account.</p>" +
-            $"<p><a href=\"{link}\">Set a new password</a></p>" +
-            "<p>This link expires in 1 hour.</p>");
+        _ = mail.SendAsync(user.Email, "Password reset (AssetHub)",
+            EmailTemplates.AdminPasswordReset(user.DisplayName, "AssetHub Platform", link));
 
         return TypedResults.Ok(new RootResetResponse(link, expires));
     }
@@ -208,5 +206,23 @@ public static class RootAdminEndpoints
         db.Users.Remove(user);
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
+    }
+
+    // ── Mail delivery toggle ──────────────────────────────────────────────
+
+    static async Task<Results<Ok<MailSettingsDto>, ForbidHttpResult>> GetMailSettings(
+        ICurrentUser cu, IMailSettings mailSettings, CancellationToken ct)
+    {
+        if (!cu.IsRootAdmin) return TypedResults.Forbid();
+        return TypedResults.Ok(await mailSettings.GetAsync(ct));
+    }
+
+    static async Task<Results<Ok<MailSettingsDto>, ForbidHttpResult>> UpdateMailSettings(
+        MailSettingsRequest req, ICurrentUser cu, IMailSettings mailSettings, CancellationToken ct)
+    {
+        if (!cu.IsRootAdmin) return TypedResults.Forbid();
+        if (cu.UserId is not Guid uid) return TypedResults.Forbid();
+        await mailSettings.SetEnabledAsync(req.Enabled, uid, ct);
+        return TypedResults.Ok(await mailSettings.GetAsync(ct));
     }
 }
