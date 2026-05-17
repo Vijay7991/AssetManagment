@@ -258,9 +258,32 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    // Idempotent schema patches for columns added after initial EnsureCreated.
+    // Idempotent schema patches for columns/tables added after initial EnsureCreated.
+    // (EnsureCreated never alters an existing schema, so we patch by hand here.)
     await db.Database.ExecuteSqlRawAsync(
         "ALTER TABLE \"Assets\" ADD COLUMN IF NOT EXISTS \"Currency\" VARCHAR(3) NOT NULL DEFAULT 'USD'");
+
+    await db.Database.ExecuteSqlRawAsync(@"
+        CREATE TABLE IF NOT EXISTS ""SystemSettings"" (
+            ""Key"" text NOT NULL PRIMARY KEY,
+            ""Value"" text NOT NULL,
+            ""UpdatedAt"" timestamptz NOT NULL,
+            ""UpdatedByUserId"" uuid NULL
+        );");
+
+    await db.Database.ExecuteSqlRawAsync(@"
+        CREATE TABLE IF NOT EXISTS ""EmailVerificationTokens"" (
+            ""Id"" uuid NOT NULL PRIMARY KEY,
+            ""UserId"" uuid NOT NULL REFERENCES ""Users""(""Id"") ON DELETE CASCADE,
+            ""TokenHash"" text NOT NULL,
+            ""ExpiresAt"" timestamptz NOT NULL,
+            ""ConsumedAt"" timestamptz NULL,
+            ""CreatedAt"" timestamptz NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ""IX_EmailVerificationTokens_TokenHash""
+            ON ""EmailVerificationTokens"" (""TokenHash"");
+        CREATE INDEX IF NOT EXISTS ""IX_EmailVerificationTokens_UserId""
+            ON ""EmailVerificationTokens"" (""UserId"");");
 
     // Promote the configured email to root admin if it already exists. If the
     // address hasn't signed up yet, the flag will be set on next startup once
