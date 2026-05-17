@@ -113,6 +113,7 @@ public static class AssetEndpoints
         Guid? typeId = null,
         Guid? locationId = null,
         string? status = null,
+        bool warrantyExpiring = false,
         int page = 1,
         int pageSize = 25)
     {
@@ -133,6 +134,12 @@ public static class AssetEndpoints
         if (categoryId.HasValue) query = query.Where(a => a.AssetType.CategoryId == categoryId.Value);
         if (locationId.HasValue) query = query.Where(a => a.LocationId == locationId.Value);
         if (Enum.TryParse<AssetStatus>(status, true, out var st)) query = query.Where(a => a.Status == st);
+        if (warrantyExpiring)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30));
+            query = query.Where(a => a.WarrantyUntil != null && a.WarrantyUntil >= today && a.WarrantyUntil <= cutoff);
+        }
 
         var total = await query.CountAsync(ct);
 
