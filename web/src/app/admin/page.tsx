@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/card";
 import {
-  Building2, Copy, Crown, KeyRound, Power, PowerOff, Search,
-  Shield, ShieldCheck, ShieldOff, Trash2, Users, X,
+  Building2, Copy, Crown, KeyRound, Mail, MailCheck, MailX,
+  Power, PowerOff, Search, Settings, Shield, ShieldCheck, ShieldOff,
+  Trash2, Users, X,
 } from "lucide-react";
 import { cn, relativeTime } from "@/lib/utils";
 
@@ -38,20 +39,17 @@ type RootTenant = {
 };
 
 type RootResetResponse = { resetLink: string; expiresAt: string };
+type MailSettings = { enabled: boolean; updatedAt: string | null; updatedByUserId: string | null };
 
 export default function RootAdminPage() {
   const { accessToken, user } = useAuth();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"users" | "tenants">("users");
+  const [tab, setTab] = useState<"users" | "tenants" | "settings">("users");
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [resetLink, setResetLink] = useState<{ email: string; link: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  // We could gate this view at the route layer instead, but the user already
-  // hits the AppShell auth check — anyone reaching this page is signed in. We
-  // do an explicit guard here so a non-root user who guesses the URL just sees
-  // a friendly "not authorized" message rather than a stack of empty queries.
   const isRoot = !!user?.isRootAdmin;
 
   const users = useQuery({
@@ -66,6 +64,12 @@ export default function RootAdminPage() {
     enabled: !!accessToken && isRoot && tab === "tenants",
   });
 
+  const mailSettings = useQuery({
+    queryKey: ["root-mail-settings"],
+    queryFn: () => api.get<MailSettings>("/root/settings/mail", accessToken),
+    enabled: !!accessToken && isRoot,
+  });
+
   const setActive = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       api.put(`/root/users/${id}/active`, { isActive }, accessToken),
@@ -75,7 +79,6 @@ export default function RootAdminPage() {
 
   const setRoot = useMutation({
     mutationFn: ({ id, isRoot }: { id: string; isRoot: boolean }) =>
-      // The endpoint reuses the IsActive request shape for the boolean flag.
       api.put(`/root/users/${id}/root`, { isActive: isRoot }, accessToken),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["root-users"] }),
     onError: (e: any) => setErr(e?.message || "Could not change root status."),
@@ -97,9 +100,17 @@ export default function RootAdminPage() {
     onError: (e: any) => setErr(e?.message || "Could not delete user."),
   });
 
-  // Client-side filter rather than a server search param. Total user count
-  // on a single-tenant install is small enough that this is faster and lets
-  // us search across email, name, and tenant membership at once.
+  const toggleMail = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.put<MailSettings>("/root/settings/mail", { enabled }, accessToken),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["root-mail-settings"] });
+      qc.invalidateQueries({ queryKey: ["mail-health"] });
+      setErr(null);
+    },
+    onError: (e: any) => setErr(e?.message || "Could not update mail settings."),
+  });
+
   const filteredUsers = useMemo(() => {
     if (!users.data) return [];
     const q = query.trim().toLowerCase();
@@ -161,14 +172,19 @@ export default function RootAdminPage() {
           <Button size="sm" variant={tab === "tenants" ? "default" : "outline"} onClick={() => setTab("tenants")}>
             <Building2 className="mr-2 h-4 w-4" /> Workspaces
           </Button>
+          <Button size="sm" variant={tab === "settings" ? "default" : "outline"} onClick={() => setTab("settings")}>
+            <Settings className="mr-2 h-4 w-4" /> Settings
+          </Button>
         </div>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input className="pl-9" placeholder={tab === "users" ? "Filter by email, name, workspace…" : "Filter workspaces…"}
-               value={query} onChange={e => setQuery(e.target.value)} />
-      </div>
+      {tab !== "settings" && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9" placeholder={tab === "users" ? "Filter by email, name, workspace…" : "Filter workspaces…"}
+                 value={query} onChange={e => setQuery(e.target.value)} />
+        </div>
+      )}
 
       {err && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -176,6 +192,7 @@ export default function RootAdminPage() {
         </div>
       )}
 
+      {/* ── Users tab ── */}
       {tab === "users" && (
         <Card>
           <CardHeader>
@@ -297,6 +314,7 @@ export default function RootAdminPage() {
         </Card>
       )}
 
+      {/* ── Workspaces tab ── */}
       {tab === "tenants" && (
         <Card>
           <CardHeader>
@@ -330,6 +348,72 @@ export default function RootAdminPage() {
         </Card>
       )}
 
+      {/* ── Settings tab ── */}
+      {tab === "settings" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5" /> Email delivery
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {mailSettings.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+              {mailSettings.data && (
+                <>
+                  <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                    <div className="flex items-center gap-3">
+                      {mailSettings.data.enabled ? (
+                        <MailCheck className="h-8 w-8 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <MailX className="h-8 w-8 text-muted-foreground flex-shrink-0" />
+                      )}
+                      <div>
+                        <div className="font-medium">
+                          {mailSettings.data.enabled ? "Email delivery is enabled" : "Email delivery is disabled"}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {mailSettings.data.enabled
+                            ? "Transactional emails (invites, password resets, notifications) will be sent via Resend."
+                            : "No emails will be sent. Invites can still be shared via link or WhatsApp."}
+                        </div>
+                        {mailSettings.data.updatedAt && (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Last changed {relativeTime(mailSettings.data.updatedAt)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant={mailSettings.data.enabled ? "outline" : "default"}
+                      disabled={toggleMail.isPending}
+                      onClick={() => toggleMail.mutate(!mailSettings.data!.enabled)}
+                      className="flex-shrink-0"
+                    >
+                      {toggleMail.isPending
+                        ? "Saving…"
+                        : mailSettings.data.enabled
+                          ? "Disable"
+                          : "Enable"}
+                    </Button>
+                  </div>
+
+                  <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-medium text-foreground">Requirements for email to work:</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li><code>RESEND_API_KEY</code> must be set in your environment file</li>
+                      <li>Sending domain must be verified in your Resend account</li>
+                      <li>Email delivery must be enabled above (currently <b>{mailSettings.data.enabled ? "on" : "off"}</b>)</li>
+                    </ul>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Reset link modal ── */}
       {resetLink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
              onClick={() => setResetLink(null)}>
