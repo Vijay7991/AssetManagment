@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, PasswordInput } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Boxes } from "lucide-react";
 
@@ -65,7 +65,7 @@ export default function SignupPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password <span className="text-muted-foreground">(min 8 chars)</span></Label>
-                <Input id="password" type="password" required minLength={8} value={form.password}
+                <PasswordInput id="password" required minLength={8} value={form.password}
                        onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
               </div>
               {err && <p className="text-sm text-destructive">{err}</p>}

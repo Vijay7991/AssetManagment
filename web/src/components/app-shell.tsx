@@ -259,13 +259,23 @@ function NotificationBell() {
 }
 
 function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  // `theme` reports the *stored preference* — which is "system" until the user
+  // explicitly picks something. That meant the first click was a no-op (set
+  // "dark" while system was already dark) and required a second click to
+  // actually flip. `resolvedTheme` always reports the live applied theme, so
+  // both the icon and the toggle target stay in sync from the very first
+  // click. See https://github.com/pacocoursey/next-themes#with-tailwind.
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
-  const dark = theme === "dark";
+  const dark = resolvedTheme === "dark";
   return (
-    <Button variant="ghost" size="icon" onClick={() => setTheme(dark ? "light" : "dark")}>
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+      onClick={() => setTheme(dark ? "light" : "dark")}>
       {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </Button>
   );

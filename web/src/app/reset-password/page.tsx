@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, PasswordInput } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Boxes, CheckCircle2 } from "lucide-react";
 
@@ -97,14 +97,14 @@ function ResetForm() {
               <form onSubmit={onSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="pw">New password</Label>
-                  <Input id="pw" type="password" required minLength={8}
+                  <PasswordInput id="pw" required minLength={8}
                          value={password} onChange={e => setPassword(e.target.value)}
                          autoComplete="new-password" />
                   <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="pw2">Confirm password</Label>
-                  <Input id="pw2" type="password" required minLength={8}
+                  <PasswordInput id="pw2" required minLength={8}
                          value={confirm} onChange={e => setConfirm(e.target.value)}
                          autoComplete="new-password" />
                 </div>

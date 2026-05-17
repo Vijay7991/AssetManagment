@@ -17,6 +17,12 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const backgroundedAt = useRef<number | null>(null);
+  // Guards against React 19 dev double-invoke / Fast Refresh re-mounts.
+  const didInit = useRef(false);
+  // Guards against concurrent authenticateAsync calls (initial check + AppState,
+  // rapid taps on Unlock, etc.) — Android otherwise stacks the prompts and the
+  // user sees the dialog twice.
+  const authInFlight = useRef(false);
 
   async function checkLock() {
     const enabled = await AsyncStorage.getItem(LOCK_KEY);
@@ -30,6 +36,8 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
   }
 
   async function authenticate() {
+    if (authInFlight.current) return;
+    authInFlight.current = true;
     setError(null);
     try {
       const res = await LocalAuth.authenticateAsync({
@@ -44,10 +52,14 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
       }
     } catch {
       setError("Biometric authentication failed.");
+    } finally {
+      authInFlight.current = false;
     }
   }
 
   useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
     checkLock();
     const sub = AppState.addEventListener("change", async (state) => {
       if (state === "background") {

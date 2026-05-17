@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, PasswordInput } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Boxes, CheckCircle2 } from "lucide-react";
 
@@ -114,7 +114,7 @@ export default function AcceptInvitePage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="pw">Choose a password (min 8 chars)</Label>
-              <Input id="pw" type="password" required minLength={8} value={form.password}
+              <PasswordInput id="pw" required minLength={8} value={form.password}
                      onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
               <p className="text-xs text-muted-foreground">
                 If you already have an AssetHub account with this email, sign in instead — the invite will attach automatically.

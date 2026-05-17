@@ -11,7 +11,10 @@ public record AcceptInviteRequest(string Token, string Password, string DisplayN
 public record MemberDto(
     Guid UserId, string Email, string DisplayName, string Role,
     bool IsOwner, bool IsActive, IReadOnlyList<string> Permissions, IReadOnlyList<string> ExtraPermissions,
-    DateTimeOffset JoinedAt);
+    DateTimeOffset JoinedAt,
+    // IsRootAdmin lets the members UI hide reset/role/remove buttons for the
+    // root admin row. Server-side guards still enforce it; this is purely UI.
+    bool IsRootAdmin);
 public record UpdateRoleRequest(string Role);
 public record UpdatePermissionsRequest(IReadOnlyList<string> ExtraPermissions);
 public record UpdateActiveRequest(bool IsActive);
@@ -61,7 +64,8 @@ public static class TenantEndpoints
             m.IsOwner, m.User.IsActive,
             Perms.Effective(m),
             Perms.ParseExtras(m.ExtraPermissions),
-            m.CreatedAt
+            m.CreatedAt,
+            m.User.IsRootAdmin
         )).ToList();
         return TypedResults.Ok(list);
     }
@@ -70,8 +74,13 @@ public static class TenantEndpoints
         Guid userId, UpdateRoleRequest req, ICurrentUser cu, AppDbContext db, CancellationToken ct)
     {
         if (!cu.Can(Perms.MembersWrite)) return TypedResults.Forbid();
-        var m = await db.Memberships.FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
+        var m = await db.Memberships
+            .Include(x => x.User)
+            .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
         if (m is null) return TypedResults.NotFound();
+
+        // Tenant Admins must not be able to change the role of the root admin.
+        if (m.User.IsRootAdmin && !cu.IsRootAdmin) return TypedResults.Forbid();
 
         var newRole = NormalizeRole(req.Role);
 
@@ -102,6 +111,9 @@ public static class TenantEndpoints
             .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
         if (m is null) return TypedResults.NotFound();
 
+        // Root admin permissions can't be edited by tenant admins.
+        if (m.User.IsRootAdmin && !cu.IsRootAdmin) return TypedResults.Forbid();
+
         // Reject unknown permissions to keep the data clean.
         var unknown = (req.ExtraPermissions ?? Array.Empty<string>())
             .Where(p => !string.IsNullOrWhiteSpace(p) && !Perms.IsKnownPermission(p))
@@ -117,7 +129,8 @@ public static class TenantEndpoints
             m.IsOwner, m.User.IsActive,
             Perms.Effective(m),
             Perms.ParseExtras(m.ExtraPermissions),
-            m.CreatedAt));
+            m.CreatedAt,
+            m.User.IsRootAdmin));
     }
 
     static async Task<Results<NoContent, NotFound, ForbidHttpResult, BadRequest<string>>> UpdateActive(
@@ -130,6 +143,10 @@ public static class TenantEndpoints
             .Include(x => x.User)
             .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
         if (m is null) return TypedResults.NotFound();
+
+        // Tenant admins must not be able to deactivate the root admin —
+        // doing so would lock the platform owner out of every workspace.
+        if (m.User.IsRootAdmin && !cu.IsRootAdmin) return TypedResults.Forbid();
 
         // Owners are protected from being switched off — they'd lock themselves
         // out of the workspace they created. Use a different tenant admin instead.
@@ -168,6 +185,12 @@ public static class TenantEndpoints
             .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
         if (m is null) return TypedResults.NotFound();
 
+        // Root admin is platform-level, not tenant-level. A tenant Admin must
+        // not be able to reset the root admin's password — that would let them
+        // hijack the platform owner account. Only another root admin (acting
+        // through the /api/root endpoints, not /api/tenant) can do that.
+        if (m.User.IsRootAdmin && !cu.IsRootAdmin) return TypedResults.Forbid();
+
         var (plain, hash, expires) = jwt.IssuePasswordResetToken();
         db.PasswordResetTokens.Add(new PasswordResetToken
         {
@@ -203,8 +226,13 @@ public static class TenantEndpoints
         if (!cu.Can(Perms.MembersWrite)) return TypedResults.Forbid();
         if (userId == cu.UserId) return TypedResults.BadRequest("You cannot remove yourself.");
 
-        var m = await db.Memberships.FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
+        var m = await db.Memberships
+            .Include(x => x.User)
+            .FirstOrDefaultAsync(x => x.TenantId == cu.TenantId && x.UserId == userId, ct);
         if (m is null) return TypedResults.NotFound();
+
+        // Tenant admins cannot evict the root admin from a workspace.
+        if (m.User.IsRootAdmin && !cu.IsRootAdmin) return TypedResults.Forbid();
 
         if (m.IsOwner)
             return TypedResults.BadRequest("The workspace owner cannot be removed.");

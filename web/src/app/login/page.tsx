@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, PasswordInput } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Boxes } from "lucide-react";
 
@@ -55,7 +55,7 @@ export default function LoginPage() {
                     Forgot password?
                   </Link>
                 </div>
-                <Input id="password" type="password" required value={password}
+                <PasswordInput id="password" required value={password}
                        onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
               </div>
               {err && <p className="text-sm text-destructive">{err}</p>}

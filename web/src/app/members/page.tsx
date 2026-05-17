@@ -21,6 +21,10 @@ type Member = {
   permissions: string[];
   extraPermissions: string[];
   joinedAt: string;
+  // True when this user holds the platform-level root-admin flag. Used to
+  // hide role/reset/deactivate/remove buttons in the UI; the API blocks the
+  // operations server-side too.
+  isRootAdmin: boolean;
 };
 
 type AdminResetResponse = { resetLink: string; expiresAt: string };
@@ -165,6 +169,10 @@ export default function MembersPage() {
               <ul className="divide-y">
                 {members.data.map(m => {
                   const isSelf = user?.id === m.userId;
+                  // The root admin's row is read-only for everyone except
+                  // another root admin. Server enforces the same rule; this
+                  // just hides the buttons so we don't dangle a 403-able UI.
+                  const isProtectedRoot = m.isRootAdmin && !user?.isRootAdmin;
                   return (
                     <li key={m.userId} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div className="flex items-center gap-3">
@@ -187,6 +195,11 @@ export default function MembersPage() {
                               </Badge>
                             )}
                             {isSelf && <Badge variant="outline">You</Badge>}
+                            {m.isRootAdmin && (
+                              <Badge variant="secondary" className="gap-1">
+                                <Shield className="h-3 w-3" /> Root
+                              </Badge>
+                            )}
                             {!m.isActive && <Badge variant="destructive">Deactivated</Badge>}
                           </div>
                           <div className="text-xs text-muted-foreground">
@@ -202,7 +215,7 @@ export default function MembersPage() {
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        {canManage && !m.isOwner ? (
+                        {canManage && !m.isOwner && !isProtectedRoot ? (
                           <Select value={m.role} onChange={e => updateRole.mutate({ userId: m.userId, role: e.target.value })}
                                   className="w-32" disabled={!m.isActive}>
                             <option value="Member">Member</option>
@@ -212,12 +225,12 @@ export default function MembersPage() {
                         ) : (
                           <Badge variant="outline">{m.role}</Badge>
                         )}
-                        {canManage && m.role === "Member" && (
+                        {canManage && m.role === "Member" && !isProtectedRoot && (
                           <Button size="sm" variant="outline" onClick={() => setPermsFor(m)}>
                             <Shield className="mr-1 h-3 w-3" /> Permissions
                           </Button>
                         )}
-                        {canManage && !isSelf && (
+                        {canManage && !isSelf && !isProtectedRoot && (
                           <Button size="sm" variant="outline"
                                   onClick={() => resetPassword.mutate({ userId: m.userId, email: m.email })}
                                   disabled={resetPassword.isPending}
@@ -225,7 +238,7 @@ export default function MembersPage() {
                             <KeyRound className="mr-1 h-3 w-3" /> Reset password
                           </Button>
                         )}
-                        {canManage && !isSelf && !m.isOwner && (
+                        {canManage && !isSelf && !m.isOwner && !isProtectedRoot && (
                           m.isActive ? (
                             <Button size="sm" variant="outline"
                                     onClick={() => {
@@ -244,7 +257,7 @@ export default function MembersPage() {
                             </Button>
                           )
                         )}
-                        {canManage && !isSelf && !m.isOwner && (
+                        {canManage && !isSelf && !m.isOwner && !isProtectedRoot && (
                           <Button size="icon" variant="ghost"
                                   onClick={() => removeMember.mutate(m.userId)}
                                   title="Remove member">

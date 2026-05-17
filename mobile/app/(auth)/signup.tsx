@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useRouter } from "expo-router";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Button } from "@/components/Button";
+import { PasswordField } from "@/components/PasswordField";
 import { useAuth } from "@/lib/auth";
 import { useTheme, spacing } from "@/lib/theme";
 
@@ -50,8 +51,12 @@ export default function SignupScreen() {
                  placeholder="e.g. Acme Construction" />
           <Field label="Email" value={form.email} email
                  onChangeText={v => setForm(f => ({ ...f, email: v }))} />
-          <Field label="Password (min 8)" value={form.password} secret
-                 onChangeText={v => setForm(f => ({ ...f, password: v }))} />
+          <PasswordField
+            label="Password (min 8)"
+            value={form.password}
+            onChangeText={v => setForm(f => ({ ...f, password: v }))}
+            autoComplete="new-password"
+          />
 
           {err && <Text style={[styles.error, { color: t.danger }]}>{err}</Text>}
 
@@ -68,15 +73,16 @@ export default function SignupScreen() {
   );
 }
 
+/// Plain text field. Passwords use the shared <PasswordField> component
+/// instead so the eye-toggle behavior stays consistent across login + signup.
 function Field({
-  label, value, onChangeText, placeholder, email, secret,
+  label, value, onChangeText, placeholder, email,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
   email?: boolean;
-  secret?: boolean;
 }) {
   const t = useTheme();
   return (
@@ -88,9 +94,8 @@ function Field({
         placeholder={placeholder}
         placeholderTextColor={t.textMuted}
         autoCapitalize={email ? "none" : "sentences"}
-        autoCorrect={!email && !secret}
+        autoCorrect={!email}
         keyboardType={email ? "email-address" : "default"}
-        secureTextEntry={!!secret}
         style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.surface }]}
       />
     </View>

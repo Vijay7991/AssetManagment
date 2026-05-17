@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, PasswordInput } from "@/components/ui/input";
 import { CheckCircle2, Smartphone } from "lucide-react";
 
 // Served from web/public/downloads/assethub.apk so clicking triggers a
@@ -65,20 +65,20 @@ export default function SettingsPage() {
           <form onSubmit={changePassword} className="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="cpw">Current password</Label>
-              <Input id="cpw" type="password" required value={pw.current}
+              <PasswordInput id="cpw" required value={pw.current}
                      onChange={e => setPw(s => ({ ...s, current: e.target.value }))}
                      autoComplete="current-password" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="npw">New password</Label>
-              <Input id="npw" type="password" required minLength={8} value={pw.next}
+              <PasswordInput id="npw" required minLength={8} value={pw.next}
                      onChange={e => setPw(s => ({ ...s, next: e.target.value }))}
                      autoComplete="new-password" />
               <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="npw2">Confirm new password</Label>
-              <Input id="npw2" type="password" required minLength={8} value={pw.confirm}
+              <PasswordInput id="npw2" required minLength={8} value={pw.confirm}
                      onChange={e => setPw(s => ({ ...s, confirm: e.target.value }))}
                      autoComplete="new-password" />
             </div>

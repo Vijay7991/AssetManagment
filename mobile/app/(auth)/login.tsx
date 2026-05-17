@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useRouter } from "expo-router";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Button } from "@/components/Button";
+import { PasswordField } from "@/components/PasswordField";
 import { useAuth } from "@/lib/auth";
 import { useTheme, spacing } from "@/lib/theme";
 import { clearServerUrl } from "@/lib/server";
@@ -59,17 +60,12 @@ export default function LoginScreen() {
             />
           </View>
 
-          <View style={styles.field}>
-            <Text style={[styles.label, { color: t.text }]}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.surface }]}
-            />
-          </View>
+          <PasswordField
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            autoComplete="current-password"
+          />
 
           {err && <Text style={[styles.error, { color: t.danger }]}>{err}</Text>}
 

@@ -190,7 +190,9 @@ public static class TagEndpoints
             displayQty, a.Status.ToString(),
             a.AssetTypeId, a.AssetType.Name, a.AssetType.CategoryId, a.AssetType.Category.Name,
             a.FieldValues?.RootElement,
-            a.PurchasePrice, a.PurchasedOn, a.WarrantyUntil,
+            // Currency was added to AssetDetailDto alongside PurchasePrice — keep
+            // this mapper in lockstep with AssetEndpoints.MapDetail.
+            a.PurchasePrice, a.Currency, a.PurchasedOn, a.WarrantyUntil,
             a.AssignedToUserId, a.AssignedToUser?.DisplayName,
             a.IsUnitTracked, unitCount, availableCount,
             a.Tags.Where(t => t.UnitId == null).Select(t => new TagDto(
