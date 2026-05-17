@@ -23,6 +23,8 @@ public static class AuthEndpoints
         grp.MapPost("/forgot-password", ForgotPassword).AllowAnonymous();
         grp.MapPost("/reset-password", ResetPassword).AllowAnonymous();
         grp.MapPost("/change-password", ChangePassword).RequireAuthorization();
+        grp.MapPost("/send-verification", SendVerification).RequireAuthorization();
+        grp.MapPost("/verify-email", VerifyEmail).AllowAnonymous();
     }
 
     static async Task<Results<Ok<AuthResponse>, ValidationProblem, Conflict<string>>> Signup(
@@ -31,6 +33,7 @@ public static class AuthEndpoints
         IJwtTokenService jwt,
         IEmailSender email,
         IConfiguration config,
+        HttpRequest http,
         CancellationToken ct)
     {
         var emailLower = req.Email.Trim().ToLowerInvariant();
@@ -94,13 +97,20 @@ public static class AuthEndpoints
 
         await db.SaveChangesAsync(ct);
 
-        // Fire-and-forget welcome email
-        _ = email.SendAsync(
-            user.Email,
-            "Welcome to AssetHub",
-            $"<p>Hi {WebUtilHtmlEncode(user.DisplayName)},</p>" +
-            $"<p>Your workspace <b>{WebUtilHtmlEncode(tenant.Name)}</b> is ready.</p>" +
-            "<p>Sign in and start adding assets.</p>");
+        // Fire-and-forget: welcome email + email verification link
+        var (verifyPlain, verifyHash, verifyExpires) = jwt.IssueEmailVerificationToken();
+        db.EmailVerificationTokens.Add(new EmailVerificationToken
+        {
+            UserId    = user.Id,
+            TokenHash = verifyHash,
+            ExpiresAt = verifyExpires,
+        });
+        await db.SaveChangesAsync(ct);
+
+        var baseUrlWelcome = $"{http.Scheme}://{http.Host}";
+        var verifyLink = $"{baseUrlWelcome}/verify-email?token={verifyPlain}";
+        _ = email.SendAsync(user.Email, "Welcome to AssetHub — verify your email",
+            EmailTemplates.Welcome(user.DisplayName, tenant.Name, verifyLink));
 
         return TypedResults.Ok(await BuildAuthResponse(db, jwt, user, tenant.Id, ct));
     }
@@ -280,14 +290,8 @@ public static class AuthEndpoints
 
             var baseUrl = $"{http.Scheme}://{http.Host}";
             var link = $"{baseUrl}/reset-password?token={plain}";
-            _ = email.SendAsync(
-                user.Email,
-                "Reset your AssetHub password",
-                $"<p>Hi {WebUtilHtmlEncode(user.DisplayName)},</p>" +
-                "<p>We received a request to reset the password on your AssetHub account. " +
-                "If that was you, click the link below — otherwise, ignore this email.</p>" +
-                $"<p><a href=\"{link}\">Set a new password</a></p>" +
-                "<p>This link expires in 1 hour.</p>");
+            _ = email.SendAsync(user.Email, "Reset your AssetHub password",
+                EmailTemplates.PasswordReset(user.DisplayName, link));
         }
 
         return TypedResults.Ok();
@@ -355,6 +359,61 @@ public static class AuthEndpoints
         return TypedResults.Ok();
     }
 
+    // ── Email verification ────────────────────────────────────────────────
+
+    static async Task<Results<Ok, UnauthorizedHttpResult>> SendVerification(
+        ICurrentUser current, AppDbContext db, IJwtTokenService jwt,
+        IEmailSender email, HttpRequest http, CancellationToken ct)
+    {
+        if (current.UserId is not Guid uid) return TypedResults.Unauthorized();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == uid, ct);
+        if (user is null) return TypedResults.Unauthorized();
+
+        if (user.EmailVerified) return TypedResults.Ok(); // already verified
+
+        // Invalidate any prior tokens for this user
+        var old = await db.EmailVerificationTokens
+            .Where(t => t.UserId == uid && t.ConsumedAt == null)
+            .ToListAsync(ct);
+        foreach (var t in old) t.ConsumedAt = DateTimeOffset.UtcNow;
+
+        var (plain, hash, expires) = jwt.IssueEmailVerificationToken();
+        db.EmailVerificationTokens.Add(new EmailVerificationToken
+        {
+            UserId    = uid,
+            TokenHash = hash,
+            ExpiresAt = expires,
+        });
+        await db.SaveChangesAsync(ct);
+
+        var baseUrl = $"{http.Scheme}://{http.Host}";
+        var link = $"{baseUrl}/verify-email?token={plain}";
+        _ = email.SendAsync(user.Email, "Verify your AssetHub email address",
+            EmailTemplates.VerifyEmail(user.DisplayName, link));
+
+        return TypedResults.Ok();
+    }
+
+    static async Task<Results<Ok, BadRequest<string>>> VerifyEmail(
+        string token,
+        AppDbContext db, IJwtTokenService jwt, CancellationToken ct)
+    {
+        var hash = jwt.HashToken(token);
+        var record = await db.EmailVerificationTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+
+        if (record is null ||
+            record.ConsumedAt is not null ||
+            record.ExpiresAt < DateTimeOffset.UtcNow)
+            return TypedResults.BadRequest("This verification link is invalid or has expired. Request a new one.");
+
+        record.User.EmailVerified = true;
+        record.ConsumedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return TypedResults.Ok();
+    }
+
     static string SlugFromName(string name, string suffix)
     {
         var slug = new string(name.ToLowerInvariant()
@@ -362,6 +421,4 @@ public static class AuthEndpoints
         slug = string.Join('-', slug.Split('-', StringSplitOptions.RemoveEmptyEntries));
         return $"{slug}-{suffix}".Trim('-');
     }
-
-    static string WebUtilHtmlEncode(string s) => System.Net.WebUtility.HtmlEncode(s);
 }

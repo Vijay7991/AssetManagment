@@ -28,13 +28,17 @@ var jwtOpts = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
 if (jwtOpts.Secret.Length < 32)
     throw new InvalidOperationException("Jwt:Secret must be at least 32 characters.");
 
-var smtpOpts = builder.Configuration.GetSection("Smtp").Get<SmtpOptions>() ?? new SmtpOptions();
+var resendOpts = new ResendOptions
+{
+    ApiKey = builder.Configuration["Resend:ApiKey"] ?? builder.Configuration["RESEND_API_KEY"] ?? "",
+    From   = builder.Configuration["Resend:From"] ?? "AssetHub <no-reply@mail.assethub.uk>",
+};
 var storageOpts = builder.Configuration.GetSection("Storage").Get<StorageOptions>() ?? new StorageOptions();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? new[] { "http://localhost:3000" };
 
 builder.Services.AddSingleton(jwtOpts);
-builder.Services.AddSingleton(smtpOpts);
+builder.Services.AddSingleton(resendOpts);
 builder.Services.AddSingleton(storageOpts);
 
 // ─── Database ────────────────────────────────────────────────────────
@@ -73,7 +77,14 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IBarcodeRenderer, BarcodeRenderer>();
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddHttpClient("resend", c =>
+{
+    c.BaseAddress = new Uri("https://api.resend.com/");
+    c.DefaultRequestHeaders.Authorization =
+        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", resendOpts.ApiKey);
+});
+builder.Services.AddSingleton<IMailSettings, MailSettingsService>();
+builder.Services.AddSingleton<IEmailSender, ResendEmailSender>();
 builder.Services.AddSingleton<IMailHealth, MailHealth>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<INotifier, Notifier>();

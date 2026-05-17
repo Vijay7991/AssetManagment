@@ -27,6 +27,10 @@ public interface IJwtTokenService
     /// tokens but live in their own table. Returns a URL-safe plain token (sent
     /// in the email) and the hash (stored in DB).
     (string PlainToken, string TokenHash, DateTimeOffset ExpiresAt) IssuePasswordResetToken();
+
+    /// One-time email-verification token. Same mechanics as password reset but
+    /// with a 24-hour window — gives users a full day to click the link.
+    (string PlainToken, string TokenHash, DateTimeOffset ExpiresAt) IssueEmailVerificationToken();
 }
 
 public class JwtTokenService : IJwtTokenService
@@ -90,6 +94,15 @@ public class JwtTokenService : IJwtTokenService
         // 1-hour expiry — long enough the user can read the email and click, short
         // enough that a stolen mailbox snapshot from yesterday is worthless.
         var expires = DateTimeOffset.UtcNow.AddHours(1);
+        return (plain, hash, expires);
+    }
+
+    public (string, string, DateTimeOffset) IssueEmailVerificationToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(24);
+        var plain = Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        var hash = HashToken(plain);
+        var expires = DateTimeOffset.UtcNow.AddHours(24);
         return (plain, hash, expires);
     }
 

@@ -193,7 +193,7 @@ public static class AssetEndpoints
 
     static async Task<Results<Ok<AssetDetailDto>, ForbidHttpResult, BadRequest<string>>> Create(
         AssetCreateRequest req, ICurrentUser cu, AppDbContext db, HttpRequest http,
-        IBarcodeRenderer _, IAuditLogger audit, CancellationToken ct)
+        IBarcodeRenderer _, IAuditLogger audit, IEmailSender email, CancellationToken ct)
     {
         if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
 
@@ -295,6 +295,10 @@ public static class AssetEndpoints
             new { asset.Name, asset.AssetTypeId, isUnitTracked, qty });
         await db.SaveChangesAsync(ct);
 
+        // Notify the assignee if set on creation
+        if (asset.AssignedToUserId.HasValue && asset.AssignedToUserId != cu.UserId)
+            _ = SendAssetAssignedEmail(db, email, http, asset.AssignedToUserId.Value, asset.Name, asset.Id, ct);
+
         // Reload with includes
         var created = await db.Assets
             .Include(a => a.AssetType).ThenInclude(t => t.Category)
@@ -310,7 +314,7 @@ public static class AssetEndpoints
 
     static async Task<Results<Ok<AssetDetailDto>, NotFound, ForbidHttpResult, BadRequest<string>>> Update(
         Guid id, AssetUpdateRequest req, ICurrentUser cu, AppDbContext db, HttpRequest http,
-        IAuditLogger audit, CancellationToken ct)
+        IAuditLogger audit, IEmailSender email, CancellationToken ct)
     {
         if (!cu.Can(Perms.AssetsWrite)) return TypedResults.Forbid();
         var asset = await db.Assets
@@ -329,6 +333,8 @@ public static class AssetEndpoints
                 l.Id == req.LocationId.Value && l.TenantId == cu.TenantId, ct);
             if (!locExists) return TypedResults.BadRequest("Location not found in this tenant.");
         }
+
+        var prevAssignee = asset.AssignedToUserId;
 
         asset.Name = req.Name.Trim();
         asset.Description = req.Description;
@@ -352,6 +358,13 @@ public static class AssetEndpoints
 
         audit.Log("Updated", "Asset", asset.Id, $"Updated asset '{asset.Name}'", new { asset.Status });
         await db.SaveChangesAsync(ct);
+
+        // Notify the new assignee only when the assignee actually changed
+        if (req.AssignedToUserId.HasValue
+            && req.AssignedToUserId != prevAssignee
+            && req.AssignedToUserId != cu.UserId)
+            _ = SendAssetAssignedEmail(db, email, http, req.AssignedToUserId.Value, asset.Name, asset.Id, ct);
+
         return TypedResults.Ok(MapDetail(asset, http));
     }
 
@@ -398,6 +411,24 @@ public static class AssetEndpoints
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
+
+    static async Task SendAssetAssignedEmail(
+        AppDbContext db, IEmailSender email, HttpRequest http,
+        Guid assigneeId, string assetName, Guid assetId, CancellationToken ct)
+    {
+        try
+        {
+            var user = await db.Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == assigneeId, ct);
+            if (user is null || string.IsNullOrEmpty(user.Email)) return;
+            var baseUrl = $"{http.Scheme}://{http.Host}";
+            var link = $"{baseUrl}/assets/{assetId}";
+            await email.SendAsync(user.Email,
+                $"Asset assigned to you: {assetName}",
+                EmailTemplates.AssetAssigned(user.DisplayName, assetName, null, link));
+        }
+        catch { /* best-effort, never fail the request */ }
+    }
 
     static AssetDetailDto MapDetail(Asset a, HttpRequest http)
     {
