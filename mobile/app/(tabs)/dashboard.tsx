@@ -61,16 +61,20 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.kpiRow}>
-          <Kpi label="Total" value={stats.data?.total ?? "—"} icon="cube" />
-          <Kpi label="In service" value={inService} icon="checkmark-circle" tone="success" />
+          <Kpi label="Total" value={stats.data?.total ?? "—"} icon="cube"
+               onPress={() => router.push("/(tabs)/assets")} />
+          <Kpi label="In service" value={inService} icon="checkmark-circle" tone="success"
+               onPress={() => router.push("/(tabs)/assets?status=InService")} />
         </View>
         <View style={styles.kpiRow}>
-          <Kpi label="In repair" value={inRepair} icon="construct" tone="warning" />
+          <Kpi label="In repair" value={inRepair} icon="construct" tone="warning"
+               onPress={() => router.push("/(tabs)/assets?status=InRepair")} />
           <Kpi
             label="Warranty < 30d"
             value={stats.data?.warrantyExpiringSoon ?? 0}
             icon="alarm"
             tone="danger"
+            onPress={() => router.push("/(tabs)/assets?warrantyExpiring=true")}
           />
         </View>
 
@@ -116,11 +120,12 @@ export default function DashboardScreen() {
   );
 }
 
-function Kpi({ label, value, icon, tone }: {
+function Kpi({ label, value, icon, tone, onPress }: {
   label: string;
   value: string | number;
   icon: keyof typeof Ionicons.glyphMap;
   tone?: "success" | "warning" | "danger";
+  onPress?: () => void;
 }) {
   const t = useTheme();
   const color = tone === "success" ? t.success
@@ -128,13 +133,16 @@ function Kpi({ label, value, icon, tone }: {
               : tone === "danger" ? t.danger
               : t.accent;
   return (
-    <View style={[styles.kpi, { backgroundColor: t.surface, borderColor: t.border }]}>
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={[styles.kpi, { backgroundColor: t.surface, borderColor: t.border }]}>
       <View style={styles.kpiHead}>
         <Ionicons name={icon} size={16} color={color} />
         <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: "600" }}>{label}</Text>
       </View>
       <Text style={[styles.kpiValue, { color: t.text }]}>{value}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
