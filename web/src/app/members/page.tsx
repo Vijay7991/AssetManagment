@@ -302,8 +302,15 @@ export default function MembersPage() {
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Email delivery isn't reachable from the server right now —
-                        invites can only be sent via WhatsApp.
+                        {mailHealth.data?.reason?.includes("disabled by an administrator")
+                          ? <>
+                              Email delivery is disabled.{" "}
+                              {user?.isRootAdmin
+                                ? <a href="/admin" className="underline text-primary">Enable it in Admin → Settings.</a>
+                                : "Contact your platform administrator to enable it."}
+                            </>
+                          : "Email delivery isn't reachable from the server right now — invites can only be sent via WhatsApp."
+                        }
                       </p>
                     </>
                   )}
