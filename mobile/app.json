@@ -16,7 +16,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.assethub.mobile",
-      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "AssetHub needs the camera to scan QR codes on asset labels.",
         "NSPhotoLibraryUsageDescription": "AssetHub needs access to your photos to attach images to assets.",
@@ -26,7 +25,6 @@
     },
     "android": {
       "package": "com.assethub.mobile",
-      "versionCode": 1,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.INTERNET",
@@ -66,12 +64,20 @@
     ],
     "extra": {
       "defaultServerUrl": "https://www.asset-hub.uk",
+      "router": {},
       "eas": {
-        "projectId": "00000000-0000-0000-0000-000000000000"
+        "projectId": "9d6ae473-2078-45f1-8e46-40ff4df07477"
       }
     },
     "experiments": {
       "typedRoutes": true
+    },
+    "owner": "vijayamni",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/9d6ae473-2078-45f1-8e46-40ff4df07477"
     }
   }
 }
