@@ -1,9 +1,12 @@
 import { useRouter } from "expo-router";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as LocalAuth from "expo-local-authentication";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { BIOMETRIC_LOCK_KEY } from "@/components/BiometricGate";
 import { useAuth } from "@/lib/auth";
 import { clearServerUrl, getServerUrl } from "@/lib/server";
 import { useTheme, useThemeMode, spacing, ThemeMode } from "@/lib/theme";
@@ -15,10 +18,28 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, activeTenant, tenants, switchTenant, logout } = useAuth();
   const [serverUrl, setServerUrl] = useState<string | null>(null);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
 
   useEffect(() => {
     getServerUrl().then(setServerUrl);
+    (async () => {
+      const hw = await LocalAuth.hasHardwareAsync();
+      const enrolled = await LocalAuth.isEnrolledAsync();
+      setBiometricAvailable(hw && enrolled);
+      const stored = await AsyncStorage.getItem(BIOMETRIC_LOCK_KEY);
+      setBiometricEnabled(stored === "1");
+    })();
   }, []);
+
+  async function toggleBiometric(value: boolean) {
+    if (value) {
+      const res = await LocalAuth.authenticateAsync({ promptMessage: "Confirm to enable biometric lock" });
+      if (!res.success) return;
+    }
+    await AsyncStorage.setItem(BIOMETRIC_LOCK_KEY, value ? "1" : "0");
+    setBiometricEnabled(value);
+  }
 
   async function onLogout() {
     Alert.alert("Sign out?", "You'll need to sign in again on this device.", [
@@ -126,6 +147,27 @@ export default function ProfileScreen() {
             })}
           </View>
         </Card>
+
+        {biometricAvailable && (
+          <Card>
+            <Text style={[styles.section, { color: t.text }]}>Security</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flex: 1, paddingRight: spacing.md }}>
+                <Text style={{ color: t.text, fontSize: 14, fontWeight: "500" }}>
+                  Biometric lock
+                </Text>
+                <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
+                  Require Face/Touch ID when opening the app.
+                </Text>
+              </View>
+              <Switch
+                value={biometricEnabled}
+                onValueChange={toggleBiometric}
+                trackColor={{ false: t.border, true: t.accent }}
+              />
+            </View>
+          </Card>
+        )}
 
         <Card>
           <Text style={[styles.section, { color: t.text }]}>Server</Text>

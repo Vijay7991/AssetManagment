@@ -70,6 +70,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="activity"
+        options={{
+          title: "Activity",
+          tabBarIcon: ({ color, size }) => <Ionicons name="pulse-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{
           title: "Inbox",
