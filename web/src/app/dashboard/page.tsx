@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Boxes, Plus, ScanLine, ShieldAlert, TrendingUp } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { StatusBadge, prettyStatus } from "@/components/status";
+import { cn } from "@/lib/utils";
 
 type Stats = {
   total: number;
@@ -54,10 +55,10 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard title="Total assets" value={stats.data?.total ?? "—"} icon={Boxes} />
-        <KpiCard title="In service" value={inService} icon={TrendingUp} />
-        <KpiCard title="In repair" value={inRepair} icon={ShieldAlert} variant="warning" />
-        <KpiCard title="Warranty expiring (30d)" value={stats.data?.warrantyExpiringSoon ?? 0} icon={ShieldAlert} variant="destructive" />
+        <KpiCard title="Total assets" value={stats.data?.total ?? "—"} icon={Boxes} href="/assets" />
+        <KpiCard title="In service" value={inService} icon={TrendingUp} href="/assets?status=InService" />
+        <KpiCard title="In repair" value={inRepair} icon={ShieldAlert} variant="warning" href="/assets?status=InRepair" />
+        <KpiCard title="Warranty expiring (30d)" value={stats.data?.warrantyExpiringSoon ?? 0} icon={ShieldAlert} variant="destructive" href="/assets?warrantyExpiring=true" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -109,12 +110,13 @@ export default function DashboardPage() {
             <CardTitle>Status breakdown</CardTitle>
             <CardDescription>Where your assets stand.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-1">
             {stats.data?.byStatus.map(s => (
-              <div key={s.status} className="flex items-center justify-between text-sm">
+              <Link key={s.status} href={`/assets?status=${s.status}`}
+                    className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors">
                 <span className="text-muted-foreground">{prettyStatus(s.status)}</span>
                 <span className="font-medium">{s.count}</span>
-              </div>
+              </Link>
             ))}
             {(!stats.data || stats.data.byStatus.length === 0) && (
               <p className="text-sm text-muted-foreground">No data yet.</p>
@@ -126,19 +128,20 @@ export default function DashboardPage() {
   );
 }
 
-function KpiCard({ title, value, icon: Icon, variant = "default" }: {
+function KpiCard({ title, value, icon: Icon, variant = "default", href }: {
   title: string;
   value: number | string;
   icon: React.ElementType;
   variant?: "default" | "warning" | "destructive";
+  href?: string;
 }) {
   const tone = {
     default: "text-foreground",
     warning: "text-amber-600 dark:text-amber-400",
     destructive: "text-destructive",
   }[variant];
-  return (
-    <Card>
+  const inner = (
+    <>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         <Icon className={`h-4 w-4 ${tone}`} />
@@ -146,8 +149,18 @@ function KpiCard({ title, value, icon: Icon, variant = "default" }: {
       <CardContent>
         <div className={`text-2xl font-semibold ${tone}`}>{value}</div>
       </CardContent>
-    </Card>
+    </>
   );
+  if (href) {
+    return (
+      <Link href={href}>
+        <Card className={cn("transition-colors hover:bg-accent/50", href && "cursor-pointer")}>
+          {inner}
+        </Card>
+      </Link>
+    );
+  }
+  return <Card>{inner}</Card>;
 }
 
 function EmptyState({ title, description, cta }: { title: string; description: string; cta?: React.ReactNode }) {

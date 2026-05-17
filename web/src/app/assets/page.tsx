@@ -1,28 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth, useCan } from "@/lib/auth-context";
+import { useSearchParams } from "next/navigation";
 import { api, AssetListItem, BASE, ImportResult, Location, Paged } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent, Badge } from "@/components/ui/card";
-import { Boxes, Download, MapPin, Plus, Search, Upload } from "lucide-react";
+import { Boxes, Download, MapPin, Plus, Search, Upload, X } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { StatusBadge, prettyStatus } from "@/components/status";
 
 const STATUSES = ["InService", "InStorage", "InRepair", "Retired", "Lost"];
 
 export default function AssetsPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">Loading…</div>}>
+      <AssetsContent />
+    </Suspense>
+  );
+}
+
+function AssetsContent() {
+  const searchParams = useSearchParams();
   const { accessToken } = useAuth();
   const canWrite = useCan("assets:write");
   const canImport = useCan("import:write");
   const qc = useQueryClient();
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(searchParams.get("status") || "");
+  const [warrantyExpiring, setWarrantyExpiring] = useState(searchParams.get("warrantyExpiring") === "true");
   const [locationId, setLocationId] = useState("");
   const [page, setPage] = useState(1);
 
@@ -68,12 +79,13 @@ export default function AssetsPage() {
   }
 
   const list = useQuery({
-    queryKey: ["assets", q, status, locationId, page],
+    queryKey: ["assets", q, status, warrantyExpiring, locationId, page],
     queryFn: () => {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (q) params.set("q", q);
       if (status) params.set("status", status);
       if (locationId) params.set("locationId", locationId);
+      if (warrantyExpiring) params.set("warrantyExpiring", "true");
       return api.get<Paged<AssetListItem>>(`/assets?${params}`, accessToken);
     },
     enabled: !!accessToken,
@@ -173,10 +185,18 @@ export default function AssetsPage() {
             onChange={e => setQInput(e.target.value)}
           />
         </div>
-        <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="w-44">
+        <Select value={status} onChange={e => { setStatus(e.target.value); setWarrantyExpiring(false); setPage(1); }} className="w-44">
           <option value="">All statuses</option>
           {STATUSES.map(s => <option key={s} value={s}>{prettyStatus(s)}</option>)}
         </Select>
+        {warrantyExpiring && (
+          <button
+            onClick={() => { setWarrantyExpiring(false); setPage(1); }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-destructive/50 bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors">
+            Warranty expiring (30d)
+            <X className="h-3 w-3" />
+          </button>
+        )}
       </div>
 
       <Card>
