@@ -12,8 +12,11 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Boxes, ScanLine, Tag as TagIcon, FolderTree,
   Users, Settings, LogOut, Sun, Moon, Menu, X, ChevronDown, Activity,
-  Wrench, Bell, MapPin, Shield,
+  Wrench, Bell, MapPin, Shield, Smartphone,
 } from "lucide-react";
+
+const ANDROID_APK_URL =
+  "https://expo.dev/accounts/vijayamni/projects/assethub-mobile/builds/39dee09e-342d-4112-b357-5ef8d7a8e2c7";
 
 const NAV: { label: string; href: string; icon: typeof LayoutDashboard; rootOnly?: boolean; permission?: string }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -85,8 +88,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="absolute inset-x-0 bottom-0 border-t p-3">
-          <UserMenu user={user} onLogout={logout} />
+        <div className="absolute inset-x-0 bottom-0 border-t">
+          <a
+            href={ANDROID_APK_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors border-b"
+          >
+            <Smartphone className="h-3.5 w-3.5 shrink-0" />
+            <span>Download Android app</span>
+          </a>
+          <div className="p-3">
+            <UserMenu user={user} onLogout={logout} />
+          </div>
         </div>
       </aside>
 

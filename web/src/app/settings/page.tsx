@@ -6,7 +6,10 @@ import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Smartphone } from "lucide-react";
+
+const ANDROID_APK_URL =
+  "https://expo.dev/accounts/vijayamni/projects/assethub-mobile/builds/39dee09e-342d-4112-b357-5ef8d7a8e2c7";
 
 export default function SettingsPage() {
   const { user, activeTenant, accessToken, logout } = useAuth();
@@ -102,6 +105,27 @@ export default function SettingsPage() {
           <Row label="Slug"><span className="font-mono">{activeTenant?.slug}</span></Row>
           <Row label="Plan">{activeTenant?.plan}</Row>
           <Row label="Your role">{activeTenant?.role}</Row>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5" /> Mobile app
+          </CardTitle>
+          <CardDescription>
+            Get the AssetHub Android app to scan QR codes and manage assets on the go.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="text-sm text-muted-foreground">
+            Compatible with Android 8.0 and above.
+          </div>
+          <Button asChild>
+            <a href={ANDROID_APK_URL} target="_blank" rel="noopener noreferrer">
+              <Smartphone className="mr-2 h-4 w-4" /> Download APK
+            </a>
+          </Button>
         </CardContent>
       </Card>
 
