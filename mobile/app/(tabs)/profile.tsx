@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as LocalAuth from "expo-local-authentication";
@@ -8,9 +8,12 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { BIOMETRIC_LOCK_KEY } from "@/components/BiometricGate";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { clearServerUrl, getServerUrl } from "@/lib/server";
 import { useTheme, useThemeMode, spacing, ThemeMode } from "@/lib/theme";
 import { useEffect, useState } from "react";
+
+const APP_VERSION = "1.1.0";
 
 export default function ProfileScreen() {
   const t = useTheme();
@@ -20,9 +23,16 @@ export default function ProfileScreen() {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{ apkUrl: string; version: string; notes: string } | null>(null);
 
   useEffect(() => {
     getServerUrl().then(setServerUrl);
+    // Check for a newer APK on the server
+    api.get<{ version: string; apkUrl: string; notes: string }>("/app/version", null)
+      .then(info => {
+        if (isNewerVersion(info.version, APP_VERSION)) setUpdateInfo(info);
+      })
+      .catch(() => {/* non-critical */});
     (async () => {
       const hw = await LocalAuth.hasHardwareAsync();
       const enrolled = await LocalAuth.isEnrolledAsync();
@@ -74,6 +84,23 @@ export default function ProfileScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: t.background }]} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
         <Text style={[styles.title, { color: t.text }]}>Profile</Text>
+
+        {updateInfo && (
+          <Pressable
+            onPress={() => Linking.openURL(updateInfo.apkUrl)}
+            style={[styles.updateBanner, { backgroundColor: t.accent + "22", borderColor: t.accent }]}>
+            <Ionicons name="arrow-down-circle-outline" size={20} color={t.accent} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: t.accent, fontWeight: "700", fontSize: 13 }}>
+                Update available — v{updateInfo.version}
+              </Text>
+              <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                {updateInfo.notes || "Tap to download the new APK"}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={t.accent} />
+          </Pressable>
+        )}
 
         <Card>
           <View style={styles.row}>
@@ -174,6 +201,7 @@ export default function ProfileScreen() {
           <Text style={[styles.serverUrl, { color: t.textMuted }]} numberOfLines={1}>
             {serverUrl || "—"}
           </Text>
+          <KV label="App version" value={`v${APP_VERSION}`} />
           <View style={{ marginTop: spacing.sm }}>
             <Button title="Change server" variant="outline" size="sm" onPress={onChangeServer} />
           </View>
@@ -191,6 +219,16 @@ export default function ProfileScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+// Semver comparison: returns true if `a` is strictly newer than `b`.
+function isNewerVersion(a: string, b: string) {
+  const parse = (v: string) => v.split(".").map(Number);
+  const [a1, a2, a3] = parse(a);
+  const [b1, b2, b3] = parse(b);
+  if (a1 !== b1) return a1 > b1;
+  if (a2 !== b2) return a2 > b2;
+  return a3 > b3;
 }
 
 function KV({ label, value }: { label: string; value: string | number }) {
@@ -229,6 +267,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   serverUrl: { fontSize: 13, fontFamily: "monospace" },
+  updateBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: spacing.md,
+  },
   segment: {
     flexDirection: "row",
     borderWidth: 1,

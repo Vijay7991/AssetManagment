@@ -39,6 +39,9 @@ services:
       Storage__UploadsPath: /app/uploads
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       Resend__From: ${RESEND__FROM:-AssetHub <no-reply@mail.assethub.uk>}
+      App__MobileVersion: ${App__MobileVersion:-1.1.0}
+      App__ApkUrl: ${App__ApkUrl:-/downloads/assethub.apk}
+      App__ReleaseNotes: ${App__ReleaseNotes:-}
       Cors__AllowedOrigins__0: "http://localhost:${WEB_PORT}"
       Cors__AllowedOrigins__1: "https://localhost"
     volumes:

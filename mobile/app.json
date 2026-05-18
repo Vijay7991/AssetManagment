@@ -2,7 +2,7 @@
   "expo": {
     "name": "AssetHub",
     "slug": "assethub-mobile",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "scheme": "assethub",
     "icon": "./assets/icon.png",
@@ -72,12 +72,6 @@
     "experiments": {
       "typedRoutes": true
     },
-    "owner": "vijayamni",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/9d6ae473-2078-45f1-8e46-40ff4df07477"
-    }
+    "owner": "vijayamni"
   }
 }

@@ -157,6 +157,15 @@ app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", time = DateTimeOffset.UtcNow }))
    .AllowAnonymous();
 
+// Mobile app version — lets the app compare its bundled version against the
+// operator-configured latest, then show a download banner when behind.
+// Set APP_MOBILE_VERSION and APP_APK_URL in your environment / .env file.
+app.MapGet("/api/app/version", (IConfiguration cfg) => Results.Ok(new {
+    version  = cfg["App:MobileVersion"] ?? "1.1.0",
+    apkUrl   = cfg["App:ApkUrl"] ?? "/downloads/assethub.apk",
+    notes    = cfg["App:ReleaseNotes"] ?? "",
+})).AllowAnonymous();
+
 // Mail health — used by the UI to decide whether to offer the Email invite
 // channel. Public so the login/forgot-password screens can also adapt if they
 // want to surface "we can't actually email you a link right now".
