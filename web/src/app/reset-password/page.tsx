@@ -5,12 +5,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input, Label, PasswordInput } from "@/components/ui/input";
+import { Label, PasswordInput } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PasswordStrength, validatePassword } from "@/components/ui/password-strength";
 import { Boxes, CheckCircle2 } from "lucide-react";
 
-// useSearchParams needs a Suspense boundary in the app router — wrap the real
-// form inside one rather than splitting it across two routes.
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={null}>
@@ -32,19 +31,13 @@ function ResetForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 8) {
-      setErr("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setErr("Passwords don't match.");
-      return;
-    }
+    const pwErr = validatePassword(password);
+    if (pwErr) { setErr(pwErr); return; }
+    if (password !== confirm) { setErr("Passwords don't match."); return; }
     setBusy(true); setErr(null);
     try {
       await api.post("/auth/reset-password", { token, password });
       setDone(true);
-      // Land the user on the login page after a beat so they see the success state.
       setTimeout(() => router.push("/login"), 2500);
     } catch (e: any) {
       setErr(e?.message || "Could not reset password.");
@@ -63,22 +56,17 @@ function ResetForm() {
           <CardHeader>
             <CardTitle>Set a new password</CardTitle>
             <CardDescription>
-              {done
-                ? "Your password was updated."
-                : "Choose a new password for your account."}
+              {done ? "Your password was updated." : "Choose a new password for your account."}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {!token ? (
               <div className="space-y-3">
                 <p className="text-sm text-destructive">
-                  This page needs a reset token in the URL. The link may have been
-                  broken or already used.
+                  This page needs a reset token in the URL. The link may have been broken or already used.
                 </p>
                 <p className="text-sm">
-                  <Link href="/forgot-password" className="font-medium underline">
-                    Request a new reset link
-                  </Link>
+                  <Link href="/forgot-password" className="font-medium underline">Request a new reset link</Link>
                 </p>
               </div>
             ) : done ? (
@@ -87,9 +75,7 @@ function ResetForm() {
                   <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600" />
                   <div>
                     <p className="font-medium">Password updated.</p>
-                    <p className="text-muted-foreground">
-                      Redirecting you to sign in…
-                    </p>
+                    <p className="text-muted-foreground">Redirecting you to sign in…</p>
                   </div>
                 </div>
               </div>
@@ -97,15 +83,15 @@ function ResetForm() {
               <form onSubmit={onSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="pw">New password</Label>
-                  <PasswordInput id="pw" required minLength={8}
-                         value={password} onChange={e => setPassword(e.target.value)}
+                  <PasswordInput id="pw" required value={password}
+                         onChange={e => setPassword(e.target.value)}
                          autoComplete="new-password" />
-                  <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
+                  <PasswordStrength password={password} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="pw2">Confirm password</Label>
-                  <PasswordInput id="pw2" required minLength={8}
-                         value={confirm} onChange={e => setConfirm(e.target.value)}
+                  <PasswordInput id="pw2" required value={confirm}
+                         onChange={e => setConfirm(e.target.value)}
                          autoComplete="new-password" />
                 </div>
                 {err && <p className="text-sm text-destructive">{err}</p>}

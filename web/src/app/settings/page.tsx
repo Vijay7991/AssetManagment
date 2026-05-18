@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input, Label, PasswordInput } from "@/components/ui/input";
 import { CheckCircle2, Smartphone } from "lucide-react";
+import { PasswordStrength, validatePassword } from "@/components/ui/password-strength";
 
 // Served from web/public/downloads/assethub.apk so clicking triggers a
 // direct download instead of opening the Expo build page.
@@ -22,7 +23,8 @@ export default function SettingsPage() {
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
     setPwErr(null); setPwOk(false);
-    if (pw.next.length < 8) { setPwErr("New password must be at least 8 characters."); return; }
+    const pwErr = validatePassword(pw.next);
+    if (pwErr) { setPwErr(pwErr); return; }
     if (pw.next !== pw.confirm) { setPwErr("New passwords don't match."); return; }
     setPwBusy(true);
     try {
@@ -71,10 +73,10 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="npw">New password</Label>
-              <PasswordInput id="npw" required minLength={8} value={pw.next}
+              <PasswordInput id="npw" required value={pw.next}
                      onChange={e => setPw(s => ({ ...s, next: e.target.value }))}
                      autoComplete="new-password" />
-              <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
+              <PasswordStrength password={pw.next} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="npw2">Confirm new password</Label>

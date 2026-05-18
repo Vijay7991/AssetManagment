@@ -14,11 +14,22 @@ export default function SignupScreen() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  function validatePassword(p: string): string | null {
+    if (p.length < 8)           return "Password must be at least 8 characters.";
+    if (!/[A-Z]/.test(p))       return "Password needs an uppercase letter.";
+    if (!/[a-z]/.test(p))       return "Password needs a lowercase letter.";
+    if (!/\d/.test(p))          return "Password needs a number.";
+    if (!/[^A-Za-z0-9]/.test(p)) return "Password needs a special character (!@#$…).";
+    return null;
+  }
+
   async function onSubmit() {
-    if (!form.displayName || !form.email || form.password.length < 8) {
-      setErr("Name, email, and 8+ char password required.");
+    if (!form.displayName || !form.email) {
+      setErr("Name and email are required.");
       return;
     }
+    const pwErr = validatePassword(form.password);
+    if (pwErr) { setErr(pwErr); return; }
     setBusy(true); setErr(null);
     try {
       await signup({
@@ -52,7 +63,7 @@ export default function SignupScreen() {
           <Field label="Email" value={form.email} email
                  onChangeText={v => setForm(f => ({ ...f, email: v }))} />
           <PasswordField
-            label="Password (min 8)"
+            label="Password"
             value={form.password}
             onChangeText={v => setForm(f => ({ ...f, password: v }))}
             autoComplete="new-password"

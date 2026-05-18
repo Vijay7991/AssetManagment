@@ -40,6 +40,9 @@ public static class AuthEndpoints
         if (await db.Users.AnyAsync(u => u.Email == emailLower, ct))
             return TypedResults.Conflict("An account with that email already exists.");
 
+        var pwErr = PasswordPolicy.Validate(req.Password);
+        if (pwErr is not null) return TypedResults.Conflict(pwErr);
+
         // Refuse signup if the address has a pending invite — they should accept
         // that invite rather than create an unrelated account with the same email.
         if (await db.Invites.AnyAsync(i =>
@@ -321,6 +324,9 @@ public static class AuthEndpoints
         if (!token.User.IsActive && token.Source == "Self")
             return TypedResults.BadRequest("This account is deactivated. Contact your administrator.");
 
+        var pwErr = PasswordPolicy.Validate(req.Password);
+        if (pwErr is not null) return TypedResults.BadRequest(pwErr);
+
         token.User.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password, workFactor: 11);
         token.ConsumedAt = DateTimeOffset.UtcNow;
 
@@ -353,6 +359,9 @@ public static class AuthEndpoints
 
         if (!BCrypt.Net.BCrypt.Verify(req.CurrentPassword, user.PasswordHash))
             return TypedResults.BadRequest("Current password is incorrect.");
+
+        var pwErr = PasswordPolicy.Validate(req.NewPassword);
+        if (pwErr is not null) return TypedResults.BadRequest(pwErr);
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword, workFactor: 11);
         await db.SaveChangesAsync(ct);

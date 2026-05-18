@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input, Label, PasswordInput } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PasswordStrength, validatePassword } from "@/components/ui/password-strength";
 import { Boxes } from "lucide-react";
 
 export default function SignupPage() {
@@ -23,6 +24,8 @@ export default function SignupPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const pwErr = validatePassword(form.password);
+    if (pwErr) { setErr(pwErr); return; }
     setBusy(true); setErr(null);
     try {
       await signup(form);
@@ -64,9 +67,10 @@ export default function SignupPage() {
                        onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password <span className="text-muted-foreground">(min 8 chars)</span></Label>
-                <PasswordInput id="password" required minLength={8} value={form.password}
+                <Label htmlFor="password">Password</Label>
+                <PasswordInput id="password" required value={form.password}
                        onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
+                <PasswordStrength password={form.password} />
               </div>
               {err && <p className="text-sm text-destructive">{err}</p>}
               <Button type="submit" className="w-full" disabled={busy}>
