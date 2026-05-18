@@ -430,7 +430,8 @@ public static class AssetEndpoints
             var link = $"{baseUrl}/assets/{assetId}";
             await email.SendAsync(user.Email,
                 $"Asset assigned to you: {assetName}",
-                EmailTemplates.AssetAssigned(user.DisplayName, assetName, null, link));
+                EmailTemplates.AssetAssigned(user.DisplayName, assetName, null, link),
+                MailCategory.Assets);
         }
         catch { /* best-effort, never fail the request */ }
     }

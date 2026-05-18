@@ -13,7 +13,11 @@ public class ResendOptions
 
 public interface IEmailSender
 {
-    Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default);
+    /// <param name="category">Optional <see cref="MailCategory"/> constant. When supplied the
+    /// sender checks the per-category toggle before sending; null skips the category check
+    /// (use for auth-critical emails like password reset).</param>
+    Task SendAsync(string to, string subject, string htmlBody,
+        string? category = null, CancellationToken ct = default);
 }
 
 public class ResendEmailSender : IEmailSender
@@ -35,7 +39,8 @@ public class ResendEmailSender : IEmailSender
         _log = log;
     }
 
-    public async Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default)
+    public async Task SendAsync(string to, string subject, string htmlBody,
+        string? category = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(_opts.ApiKey))
         {
@@ -46,6 +51,12 @@ public class ResendEmailSender : IEmailSender
         if (!await _mailSettings.IsEnabledAsync(ct))
         {
             _log.LogDebug("Email delivery is disabled by admin — skipping email to {To}", to);
+            return;
+        }
+
+        if (category is not null && !await _mailSettings.IsCategoryEnabledAsync(category, ct))
+        {
+            _log.LogDebug("Mail category '{Category}' is disabled — skipping email to {To}", category, to);
             return;
         }
 

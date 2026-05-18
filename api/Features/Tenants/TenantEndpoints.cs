@@ -348,7 +348,8 @@ public static class TenantEndpoints
             var link = $"{baseUrl}/invite/{token}";
             _ = mail.SendAsync(invite.Email,
                 $"You've been invited to {tenant.Name}",
-                EmailTemplates.WorkspaceInvite(tenant.Name, invite.Role, link));
+                EmailTemplates.WorkspaceInvite(tenant.Name, invite.Role, link),
+                MailCategory.Invites);
         }
 
         return TypedResults.Ok(MapInviteDto(invite, baseUrl));

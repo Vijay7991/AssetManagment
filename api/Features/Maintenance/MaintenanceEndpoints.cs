@@ -206,7 +206,7 @@ public static class MaintenanceEndpoints
                 status == MaintenanceStatus.Done
                     ? $"Maintenance ticket completed: {t.Title}"
                     : $"Maintenance ticket cancelled: {t.Title}",
-                html);
+                html, MailCategory.Maintenance);
         }
 
         return TypedResults.Ok(MapDto(t));

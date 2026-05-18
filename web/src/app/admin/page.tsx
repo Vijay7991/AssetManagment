@@ -39,7 +39,20 @@ type RootTenant = {
 };
 
 type RootResetResponse = { resetLink: string; expiresAt: string };
-type MailSettings = { enabled: boolean; updatedAt: string | null; updatedByUserId: string | null };
+type MailSettings = {
+  enabled: boolean;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+  categories: Record<string, boolean>;
+};
+
+const MAIL_CATEGORIES: { key: string; label: string; description: string }[] = [
+  { key: "invites",       label: "Invitations",          description: "Workspace invite emails sent to new members" },
+  { key: "assets",        label: "Asset assignment",      description: "Notifies users when an asset is assigned to them" },
+  { key: "maintenance",   label: "Maintenance updates",  description: "Ticket completed / cancelled notifications" },
+  { key: "notifications", label: "In-app notifications", description: "Email copy of in-app activity notifications" },
+  { key: "warranty",      label: "Warranty expiry",      description: "Bundled weekly warnings for expiring warranties" },
+];
 
 export default function RootAdminPage() {
   const { accessToken, user } = useAuth();
@@ -109,6 +122,13 @@ export default function RootAdminPage() {
       setErr(null);
     },
     onError: (e: any) => setErr(e?.message || "Could not update mail settings."),
+  });
+
+  const toggleCategory = useMutation({
+    mutationFn: ({ category, enabled }: { category: string; enabled: boolean }) =>
+      api.put<MailSettings>(`/root/settings/mail/categories/${category}`, { enabled }, accessToken),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["root-mail-settings"] }),
+    onError: (e: any) => setErr(e?.message || "Could not update category."),
   });
 
   const filteredUsers = useMemo(() => {
@@ -361,6 +381,7 @@ export default function RootAdminPage() {
               {mailSettings.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
               {mailSettings.data && (
                 <>
+                  {/* Global toggle */}
                   <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
                     <div className="flex items-center gap-3">
                       {mailSettings.data.enabled ? (
@@ -374,8 +395,8 @@ export default function RootAdminPage() {
                         </div>
                         <div className="text-sm text-muted-foreground">
                           {mailSettings.data.enabled
-                            ? "Transactional emails (invites, password resets, notifications) will be sent via Resend."
-                            : "No emails will be sent. Invites can still be shared via link or WhatsApp."}
+                            ? "Master switch is on. Use the category toggles below to control which emails are sent."
+                            : "No emails will be sent regardless of category settings."}
                         </div>
                         {mailSettings.data.updatedAt && (
                           <div className="mt-1 text-xs text-muted-foreground">
@@ -390,13 +411,45 @@ export default function RootAdminPage() {
                       onClick={() => toggleMail.mutate(!mailSettings.data!.enabled)}
                       className="flex-shrink-0"
                     >
-                      {toggleMail.isPending
-                        ? "Saving…"
-                        : mailSettings.data.enabled
-                          ? "Disable"
-                          : "Enable"}
+                      {toggleMail.isPending ? "Saving…" : mailSettings.data.enabled ? "Disable all" : "Enable"}
                     </Button>
                   </div>
+
+                  {/* Per-category toggles */}
+                  {mailSettings.data.enabled && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
+                        Email categories — disable to save quota
+                      </p>
+                      <p className="text-xs text-muted-foreground px-1">
+                        Auth emails (password reset, welcome, email verification) are always sent and cannot be disabled.
+                      </p>
+                      <div className="divide-y rounded-lg border">
+                        {MAIL_CATEGORIES.map(cat => {
+                          const isOn = mailSettings.data!.categories[cat.key] !== false;
+                          const pending = toggleCategory.isPending &&
+                            (toggleCategory.variables as any)?.category === cat.key;
+                          return (
+                            <div key={cat.key}
+                                 className="flex items-center justify-between gap-4 px-4 py-3">
+                              <div>
+                                <div className="text-sm font-medium">{cat.label}</div>
+                                <div className="text-xs text-muted-foreground">{cat.description}</div>
+                              </div>
+                              <Button size="sm"
+                                variant={isOn ? "outline" : "secondary"}
+                                disabled={pending}
+                                onClick={() => toggleCategory.mutate({ category: cat.key, enabled: !isOn })}
+                                className="flex-shrink-0 min-w-[72px]"
+                              >
+                                {pending ? "…" : isOn ? "On" : "Off"}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
                     <p className="font-medium text-foreground">Requirements for email to work:</p>

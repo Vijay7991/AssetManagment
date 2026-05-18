@@ -141,7 +141,7 @@ public class WarrantyNotificationService : BackgroundService
                     addr.Email,
                     $"Warranty expiry notice — {items.Count} asset{(items.Count == 1 ? "" : "s")} need attention",
                     EmailTemplates.WarrantyExpiry(addr.DisplayName, items),
-                    ct);
+                    MailCategory.Warranty, ct);
             }
             catch (Exception ex)
             {

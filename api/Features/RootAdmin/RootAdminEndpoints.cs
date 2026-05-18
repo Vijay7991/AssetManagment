@@ -29,6 +29,7 @@ public record RootTenantDto(
 public record RootUpdateActiveRequest(bool IsActive);
 public record RootResetResponse(string ResetLink, DateTimeOffset ExpiresAt);
 public record MailSettingsRequest(bool Enabled);
+public record MailCategoryRequest(bool Enabled);
 
 // ── Endpoints ───────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ public static class RootAdminEndpoints
         grp.MapDelete("/users/{userId:guid}", DeleteUser);
         grp.MapGet("/settings/mail", GetMailSettings);
         grp.MapPut("/settings/mail", UpdateMailSettings);
+        grp.MapPut("/settings/mail/categories/{category}", UpdateMailCategory);
     }
 
     static async Task<Results<Ok<List<RootUserDto>>, ForbidHttpResult>> ListUsers(
@@ -222,7 +224,18 @@ public static class RootAdminEndpoints
     {
         if (!cu.IsRootAdmin) return TypedResults.Forbid();
         if (cu.UserId is not Guid uid) return TypedResults.Forbid();
-        await mailSettings.SetEnabledAsync(req.Enabled, uid, ct);
+        await mailSettings.SetGlobalAsync(req.Enabled, uid, ct);
+        return TypedResults.Ok(await mailSettings.GetAsync(ct));
+    }
+
+    static async Task<Results<Ok<MailSettingsDto>, ForbidHttpResult, BadRequest<string>>> UpdateMailCategory(
+        string category, MailCategoryRequest req, ICurrentUser cu, IMailSettings mailSettings, CancellationToken ct)
+    {
+        if (!cu.IsRootAdmin) return TypedResults.Forbid();
+        if (cu.UserId is not Guid uid) return TypedResults.Forbid();
+        if (!MailCategory.All.Contains(category))
+            return TypedResults.BadRequest($"Unknown category '{category}'. Valid: {string.Join(", ", MailCategory.All)}");
+        await mailSettings.SetCategoryAsync(category, req.Enabled, uid, ct);
         return TypedResults.Ok(await mailSettings.GetAsync(ct));
     }
 }

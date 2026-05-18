@@ -56,7 +56,8 @@ public class Notifier : INotifier
                 .Select(u => u.Email)
                 .FirstOrDefaultAsync();
             if (string.IsNullOrEmpty(email)) return;
-            await _email.SendAsync(email, title, EmailTemplates.Notification(title, body, link));
+            await _email.SendAsync(email, title, EmailTemplates.Notification(title, body, link),
+                MailCategory.Notifications);
         }
         catch (Exception ex)
         {
